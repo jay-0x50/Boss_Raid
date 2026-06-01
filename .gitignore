@@ -16,6 +16,16 @@ Saved/
 *.VC.db
 *.VC.opendb
 Boss_Raid.code-workspace
+Exception.code-workspace
+
+# Local sample / marketplace asset drops not required for source control
+Content/KiteDemo/
+Content/Lighting/
+Content/ParagonProps/
+Content/SampleMap/
+Content/Top-Down_Shadow/
+Content/__ExternalActors__/TopDownLanscapeMaterial/
+Content/__ExternalObjects__/TopDownLanscapeMaterial/
 
 # Unreal local/user files
 *.tmp
