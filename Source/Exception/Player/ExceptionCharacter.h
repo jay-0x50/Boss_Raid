@@ -95,6 +95,7 @@ protected:
 	UPROPERTY(EditAnywhere, Category="Input|Combat")
 	UInputAction* LockOnAction;
 
+	// 체력 / 스태미나
 	/** Max player HP for the boss raid demo */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Stats", meta=(ClampMin="1.0"))
 	float MaxHP = 1000.0f;
@@ -109,6 +110,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Stats", meta=(ClampMin="0.0"))
 	float StaminaRegenDelay = 0.5f;
 
+	// 스태미나 소모량
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Cost", meta=(ClampMin="0.0"))
 	float LightAttackStaminaCost = 10.0f;
 
@@ -121,9 +123,11 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Cost", meta=(ClampMin="0.0"))
 	float ParryStaminaCost = 15.0f;
 
+	// 패링 그로기
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Parry", meta=(ClampMin="0.0"))
 	float ParrySuccessGroggyDamage = 40.0f;
 
+	// 액션 시간
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Timing", meta=(ClampMin="0.01", Units="s"))
 	float LightAttackDuration = 0.45f;
 
@@ -145,6 +149,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Timing", meta=(ClampMin="0.01", Units="s"))
 	float HitStunDuration = 0.35f;
 
+	// 공격력 / 그로기 공격력
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Attack", meta=(ClampMin="0.0"))
 	float LightAttackDamage = 15.0f;
 
@@ -163,12 +168,14 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Attack", meta=(ClampMin="1.0", Units="cm"))
 	float AttackTraceRadius = 55.0f;
 
+	// 회피 / 피격 넉백
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Dodge", meta=(ClampMin="0.0"))
 	float DodgeImpulseStrength = 650.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Hit", meta=(ClampMin="0.0"))
 	float HitKnockbackStrength = 350.0f;
 
+	// 애니메이션
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation")
 	TObjectPtr<UAnimMontage> LightAttackMontage;
 
@@ -187,12 +194,14 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation")
 	TObjectPtr<UAnimMontage> HitMontage;
 
+	// 현재 체력 / 현재 스태미나
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Stats")
 	float CurrentHP = 0.0f;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Stats")
 	float CurrentStamina = 0.0f;
 
+	// 현재 전투 상태
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|State")
 	EBRPlayerCombatState CombatState = EBRPlayerCombatState::Idle;
 
@@ -208,9 +217,11 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Debug")
 	bool bDrawAttackTraceDebug = true;
 
+	// 리스폰
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Respawn", meta=(ClampMin="0.0", Units="s"))
 	float RespawnDelay = 1.5f;
 
+	// 락온
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|LockOn", meta=(ClampMin="0.0", Units="cm"))
 	float LockOnRange = 1500.0f;
 
@@ -250,6 +261,7 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|LockOn", meta=(ClampMin="0.0", Units="cm"))
 	float FreeCameraArmLength = 400.0f;
 
+	// 처형
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Execution", meta=(ClampMin="0.0", Units="cm"))
 	float ExecutionRange = 450.0f;
 
@@ -265,6 +277,7 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Debug")
 	int32 LastAttackHitCount = 0;
 
+	// 락온 상태
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|LockOn")
 	bool bIsLockedOn = false;
 
@@ -280,15 +293,18 @@ protected:
 	float LastStaminaSpendTime = -1000.0f;
 	float LastAttackDebugTime = -1000.0f;
 
+	// 타이머
 	FTimerHandle StateTimerHandle;
 	FTimerHandle InvincibleTimerHandle;
 	FTimerHandle ParryTimerHandle;
 	FTimerHandle RespawnTimerHandle;
 	FTimerHandle ExecutionTimerHandle;
 
+	// 처형 대상
 	UPROPERTY(Transient)
 	TObjectPtr<ABRBossBase> PendingExecutionTarget;
 
+	// 런타임 입력
 	UPROPERTY(Transient)
 	TObjectPtr<UInputMappingContext> RuntimeCombatMappingContext;
 
