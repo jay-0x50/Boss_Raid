@@ -9,6 +9,7 @@
 class UInputMappingContext;
 class UUserWidget;
 class UBRBossStatusWidget;
+class UBRInventoryComponent;
 class AExceptionCharacter;
 
 /**
@@ -37,6 +38,36 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category="Exception|Player UI")
 	void RefreshPlayerHUD();
+
+	UFUNCTION(BlueprintCallable, Category="Exception|Title UI")
+	UUserWidget* ShowTitleMenuWidget();
+
+	UFUNCTION(BlueprintCallable, Category="Exception|Menu")
+	UUserWidget* ShowPauseMenuWidget();
+
+	UFUNCTION(BlueprintCallable, Category="Exception|Menu")
+	void HidePauseMenuWidget();
+
+	UFUNCTION(BlueprintCallable, Category="Exception|Menu")
+	void TogglePauseMenuWidget();
+
+	UFUNCTION(BlueprintPure, Category="Exception|Menu")
+	bool IsPauseMenuOpen() const;
+
+	UFUNCTION(BlueprintCallable, Category="Exception|Menu")
+	bool SaveGameFromPauseMenu();
+
+	UFUNCTION(BlueprintCallable, Category="Exception|Menu")
+	void ReturnToTitle();
+
+	UFUNCTION(BlueprintCallable, Category="Exception|Menu")
+	void QuitGame();
+
+	UFUNCTION(BlueprintPure, Category="Exception|Inventory")
+	UBRInventoryComponent* GetPlayerInventoryComponent() const;
+
+	UFUNCTION(BlueprintCallable, Category="Exception|Inventory")
+	bool UseInventorySlot(int32 SlotIndex);
 	
 protected:
 
@@ -68,6 +99,21 @@ protected:
 	UPROPERTY()
 	TObjectPtr<UUserWidget> PlayerHUDWidget;
 
+	UPROPERTY(EditAnywhere, Category="Exception|Title UI")
+	TSubclassOf<UUserWidget> TitleMenuWidgetClass;
+
+	UPROPERTY()
+	TObjectPtr<UUserWidget> TitleMenuWidget;
+
+	UPROPERTY(EditAnywhere, Category="Exception|Menu")
+	TSubclassOf<UUserWidget> PauseMenuWidgetClass;
+
+	UPROPERTY()
+	TObjectPtr<UUserWidget> PauseMenuWidget;
+
+	UPROPERTY(EditAnywhere, Category="Exception|Menu")
+	FName TitleLevelName = TEXT("L_Title");
+
 	/** If true, the player will use UMG touch controls even if not playing on mobile platforms */
 	UPROPERTY(EditAnywhere, Config, Category = "Input|Touch Controls")
 	bool bForceTouchControls = false;
@@ -95,6 +141,7 @@ protected:
 	void UpdateHPGauge(float CurrentValue, float MaxValue, float NormalizedValue);
 	void UpdateStaminaGauge(float CurrentValue, float MaxValue, float NormalizedValue);
 	void UpdateGroggyGauge(float NormalizedValue);
+	bool IsInTitleLevel() const;
 
 	UPROPERTY()
 	TObjectPtr<AExceptionCharacter> BoundHUDCharacter;

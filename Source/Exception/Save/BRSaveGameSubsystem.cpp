@@ -1,6 +1,7 @@
 #include "BRSaveGameSubsystem.h"
 
 #include "BRSaveGame.h"
+#include "BRInventoryComponent.h"
 #include "ExceptionCharacter.h"
 #include "ExceptionGameMode.h"
 #include "Kismet/GameplayStatics.h"
@@ -27,6 +28,10 @@ bool UBRSaveGameSubsystem::SaveCurrentGame(const FString& SlotName, int32 UserIn
 		SaveGame->PlayerTransform.SetScale3D(FVector::OneVector);
 		SaveGame->PlayerHP = PlayerCharacter->GetCurrentHP();
 		SaveGame->PlayerStamina = PlayerCharacter->GetCurrentStamina();
+		if (UBRInventoryComponent* InventoryComponent = PlayerCharacter->GetInventoryComponent())
+		{
+			SaveGame->InventorySlots = InventoryComponent->GetSlots();
+		}
 	}
 
 	if (AExceptionGameMode* ExceptionGameMode = World->GetAuthGameMode<AExceptionGameMode>())
@@ -93,6 +98,10 @@ bool UBRSaveGameSubsystem::ApplyPendingLoadedGame()
 	const FTransform RestoreTransform = PendingSaveGame->bHasCheckpoint ? PendingSaveGame->CheckpointTransform : PendingSaveGame->PlayerTransform;
 	PlayerCharacter->SetActorTransform(RestoreTransform, false, nullptr, ETeleportType::TeleportPhysics);
 	PlayerCharacter->ApplySavedStats(PendingSaveGame->PlayerHP, PendingSaveGame->PlayerStamina);
+	if (UBRInventoryComponent* InventoryComponent = PlayerCharacter->GetInventoryComponent())
+	{
+		InventoryComponent->SetSlots(PendingSaveGame->InventorySlots);
+	}
 
 	if (AController* Controller = PlayerCharacter->GetController())
 	{

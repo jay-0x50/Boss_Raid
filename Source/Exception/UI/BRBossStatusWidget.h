@@ -25,6 +25,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Exception|Boss UI")
 	void SetBossGroggyState(int32 BossIndex, bool bIsGroggy);
 
+	UFUNCTION(BlueprintCallable, Category="Exception|Boss UI")
+	void SetBossExecutionState(int32 BossIndex, bool bCanBeExecuted);
+
 protected:
 	UFUNCTION(BlueprintImplementableEvent, Category="Exception|Boss UI", meta=(DisplayName="Clear Bosses"))
 	void BP_ClearBosses();
@@ -40,4 +43,13 @@ protected:
 
 	UFUNCTION(BlueprintImplementableEvent, Category="Exception|Boss UI", meta=(DisplayName="Set Boss Groggy State"))
 	void BP_SetBossGroggyState(int32 BossIndex, bool bIsGroggy);
+
+	UFUNCTION(BlueprintImplementableEvent, Category="Exception|Boss UI", meta=(DisplayName="Set Boss Execution State"))
+	void BP_SetBossExecutionState(int32 BossIndex, bool bCanBeExecuted);
+
+private:
+	void SetNamedText(FName BaseName, int32 BossIndex, const FText& Text);
+	void SetNamedProgress(FName BaseName, int32 BossIndex, float Percent);
+	void SetNamedVisibility(FName BaseName, int32 BossIndex, bool bVisible);
+	class UWidget* FindIndexedWidget(FName BaseName, int32 BossIndex) const;
 };

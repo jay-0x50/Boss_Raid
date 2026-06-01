@@ -65,6 +65,9 @@ protected:
 	UFUNCTION()
 	void HandleBossStateChanged();
 
+	UFUNCTION()
+	void HandleBossExecutionStateChanged(AActor* Executor);
+
 	void StartArena();
 	void BuildManagedBossList(TArray<ABRBossBase*>& OutBosses) const;
 	bool AreAllManagedBossesDead() const;

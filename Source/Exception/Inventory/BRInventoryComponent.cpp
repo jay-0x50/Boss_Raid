@@ -26,6 +26,19 @@ void UBRInventoryComponent::SetCapacity(int32 NewCapacity)
 	BroadcastInventoryChanged();
 }
 
+void UBRInventoryComponent::SetSlots(const TArray<FBRInventorySlot>& NewSlots)
+{
+	Slots = NewSlots;
+	Capacity = FMath::Max(1, Slots.Num());
+	Slots.SetNum(Capacity);
+	BroadcastInventoryChanged();
+
+	for (int32 SlotIndex = 0; SlotIndex < Slots.Num(); ++SlotIndex)
+	{
+		BroadcastSlotChanged(SlotIndex);
+	}
+}
+
 bool UBRInventoryComponent::IsValidSlotIndex(int32 SlotIndex) const
 {
 	return Slots.IsValidIndex(SlotIndex);

@@ -57,6 +57,8 @@ void ABRBossArenaTrigger::BeginPlay()
 			Boss->OnBossGroggyChanged.AddDynamic(this, &ABRBossArenaTrigger::HandleBossStatChanged);
 			Boss->OnBossGroggy.AddDynamic(this, &ABRBossArenaTrigger::HandleBossStateChanged);
 			Boss->OnBossRecoveredFromGroggy.AddDynamic(this, &ABRBossArenaTrigger::HandleBossStateChanged);
+			Boss->OnExecutionStarted.AddDynamic(this, &ABRBossArenaTrigger::HandleBossExecutionStateChanged);
+			Boss->OnExecutionCompleted.AddDynamic(this, &ABRBossArenaTrigger::HandleBossExecutionStateChanged);
 		}
 	}
 
@@ -251,6 +253,11 @@ void ABRBossArenaTrigger::HandleBossStateChanged()
 	RefreshBossStatusWidget();
 }
 
+void ABRBossArenaTrigger::HandleBossExecutionStateChanged(AActor* Executor)
+{
+	RefreshBossStatusWidget();
+}
+
 void ABRBossArenaTrigger::BuildManagedBossList(TArray<ABRBossBase*>& OutBosses) const
 {
 	OutBosses.Reset();
@@ -316,23 +323,6 @@ UBRBossStatusWidget* ABRBossArenaTrigger::ShowBossStatusWidget()
 		BossStatusWidget->AddToPlayerScreen(10);
 	}
 
-	if (BossStatusWidget)
-	{
-		constexpr float BossStatusWidth = 760.0f;
-		constexpr float BossStatusHeight = 180.0f;
-		int32 ViewportSizeX = 0;
-		int32 ViewportSizeY = 0;
-		PlayerController->GetViewportSize(ViewportSizeX, ViewportSizeY);
-		if (ViewportSizeX <= 0)
-		{
-			ViewportSizeX = static_cast<int32>(BossStatusWidth);
-		}
-
-		BossStatusWidget->SetAlignmentInViewport(FVector2D(0.0f, 0.0f));
-		BossStatusWidget->SetPositionInViewport(FVector2D((ViewportSizeX - BossStatusWidth) * 0.5f, 32.0f), false);
-		BossStatusWidget->SetDesiredSizeInViewport(FVector2D(BossStatusWidth, BossStatusHeight));
-	}
-
 	return BossStatusWidget;
 }
 
@@ -375,6 +365,7 @@ void ABRBossArenaTrigger::RefreshBossStatusWidget()
 			Boss->GetGroggyPercent());
 
 		ActiveBossStatusWidget->SetBossGroggyState(BossIndex, Boss->IsGroggy());
+		ActiveBossStatusWidget->SetBossExecutionState(BossIndex, Boss->CanBeExecuted());
 	}
 }
 

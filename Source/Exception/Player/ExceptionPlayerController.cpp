@@ -2,13 +2,19 @@
 
 #include "ExceptionPlayerController.h"
 #include "BRBossStatusWidget.h"
+#include "BRInventoryComponent.h"
+#include "BRSaveGameSubsystem.h"
 #include "ExceptionCharacter.h"
+#include "ExceptionGameMode.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/ProgressBar.h"
 #include "Components/TextBlock.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
+#include "GameFramework/InputSettings.h"
 #include "InputMappingContext.h"
+#include "Kismet/GameplayStatics.h"
+#include "Kismet/KismetSystemLibrary.h"
 #include "Blueprint/UserWidget.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Exception.h"
@@ -22,6 +28,12 @@ AExceptionPlayerController::AExceptionPlayerController()
 	if (PlayerHUDFinder.Succeeded())
 	{
 		PlayerHUDWidgetClass = PlayerHUDFinder.Class;
+	}
+
+	static ConstructorHelpers::FClassFinder<UUserWidget> TitleMenuFinder(TEXT("/Game/UI/Title/WBP_TitleMenu"));
+	if (TitleMenuFinder.Succeeded())
+	{
+		TitleMenuWidgetClass = TitleMenuFinder.Class;
 	}
 }
 
@@ -45,23 +57,6 @@ UBRBossStatusWidget *AExceptionPlayerController::ShowBossStatusWidget()
 	if (BossStatusWidget && !BossStatusWidget->IsInViewport())
 	{
 		BossStatusWidget->AddToPlayerScreen(10);
-	}
-
-	if (BossStatusWidget)
-	{
-		constexpr float BossStatusWidth = 760.0f;
-		constexpr float BossStatusHeight = 180.0f;
-		int32 ViewportSizeX = 0;
-		int32 ViewportSizeY = 0;
-		GetViewportSize(ViewportSizeX, ViewportSizeY);
-		if (ViewportSizeX <= 0)
-		{
-			ViewportSizeX = static_cast<int32>(BossStatusWidth);
-		}
-
-		BossStatusWidget->SetAlignmentInViewport(FVector2D(0.0f, 0.0f));
-		BossStatusWidget->SetPositionInViewport(FVector2D((ViewportSizeX - BossStatusWidth) * 0.5f, 32.0f), false);
-		BossStatusWidget->SetDesiredSizeInViewport(FVector2D(BossStatusWidth, BossStatusHeight));
 	}
 
 	return BossStatusWidget;
@@ -97,6 +92,35 @@ UUserWidget *AExceptionPlayerController::ShowPlayerHUDWidget()
 	return PlayerHUDWidget;
 }
 
+UUserWidget* AExceptionPlayerController::ShowTitleMenuWidget()
+{
+	if (!IsLocalPlayerController())
+	{
+		return nullptr;
+	}
+
+	if (!TitleMenuWidget && TitleMenuWidgetClass)
+	{
+		TitleMenuWidget = CreateWidget<UUserWidget>(this, TitleMenuWidgetClass);
+	}
+
+	if (TitleMenuWidget && !TitleMenuWidget->IsInViewport())
+	{
+		TitleMenuWidget->AddToPlayerScreen(100);
+	}
+
+	bShowMouseCursor = true;
+	FInputModeUIOnly InputMode;
+	if (TitleMenuWidget)
+	{
+		InputMode.SetWidgetToFocus(TitleMenuWidget->TakeWidget());
+	}
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	SetInputMode(InputMode);
+
+	return TitleMenuWidget;
+}
+
 void AExceptionPlayerController::RefreshPlayerHUD()
 {
 	AExceptionCharacter *ExceptionCharacter = Cast<AExceptionCharacter>(GetPawn());
@@ -110,12 +134,134 @@ void AExceptionPlayerController::RefreshPlayerHUD()
 	UpdateGroggyGauge(0.0f);
 }
 
+UUserWidget* AExceptionPlayerController::ShowPauseMenuWidget()
+{
+	if (!IsLocalPlayerController())
+	{
+		return nullptr;
+	}
+
+	if (!PauseMenuWidget && PauseMenuWidgetClass)
+	{
+		PauseMenuWidget = CreateWidget<UUserWidget>(this, PauseMenuWidgetClass);
+	}
+
+	if (PauseMenuWidget && !PauseMenuWidget->IsInViewport())
+	{
+		PauseMenuWidget->AddToPlayerScreen(50);
+	}
+
+	SetPause(true);
+	bShowMouseCursor = true;
+	FInputModeGameAndUI InputMode;
+	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+	if (PauseMenuWidget)
+	{
+		InputMode.SetWidgetToFocus(PauseMenuWidget->TakeWidget());
+	}
+	SetInputMode(InputMode);
+
+	return PauseMenuWidget;
+}
+
+void AExceptionPlayerController::HidePauseMenuWidget()
+{
+	if (PauseMenuWidget)
+	{
+		PauseMenuWidget->RemoveFromParent();
+	}
+
+	SetPause(false);
+	bShowMouseCursor = false;
+	SetInputMode(FInputModeGameOnly());
+}
+
+void AExceptionPlayerController::TogglePauseMenuWidget()
+{
+	if (IsPauseMenuOpen())
+	{
+		HidePauseMenuWidget();
+	}
+	else
+	{
+		ShowPauseMenuWidget();
+	}
+}
+
+bool AExceptionPlayerController::IsPauseMenuOpen() const
+{
+	return PauseMenuWidget && PauseMenuWidget->IsInViewport();
+}
+
+bool AExceptionPlayerController::SaveGameFromPauseMenu()
+{
+	if (AExceptionCharacter* ExceptionCharacter = Cast<AExceptionCharacter>(GetPawn()))
+	{
+		if (AExceptionGameMode* ExceptionGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AExceptionGameMode>() : nullptr)
+		{
+			FTransform ManualSaveTransform = ExceptionCharacter->GetActorTransform();
+			ManualSaveTransform.SetScale3D(FVector::OneVector);
+			ExceptionGameMode->SetCheckpointTransform(ManualSaveTransform);
+		}
+	}
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UBRSaveGameSubsystem* SaveSubsystem = GameInstance->GetSubsystem<UBRSaveGameSubsystem>())
+		{
+			return SaveSubsystem->SaveCurrentGame();
+		}
+	}
+
+	return false;
+}
+
+void AExceptionPlayerController::ReturnToTitle()
+{
+	HidePauseMenuWidget();
+	if (!TitleLevelName.IsNone())
+	{
+		UGameplayStatics::OpenLevel(this, TitleLevelName);
+	}
+}
+
+void AExceptionPlayerController::QuitGame()
+{
+	UKismetSystemLibrary::QuitGame(this, this, EQuitPreference::Quit, false);
+}
+
+UBRInventoryComponent* AExceptionPlayerController::GetPlayerInventoryComponent() const
+{
+	const AExceptionCharacter* ExceptionCharacter = Cast<AExceptionCharacter>(GetPawn());
+	return ExceptionCharacter ? ExceptionCharacter->GetInventoryComponent() : nullptr;
+}
+
+bool AExceptionPlayerController::UseInventorySlot(int32 SlotIndex)
+{
+	if (UBRInventoryComponent* InventoryComponent = GetPlayerInventoryComponent())
+	{
+		return InventoryComponent->UseSlot(SlotIndex);
+	}
+
+	return false;
+}
+
 void AExceptionPlayerController::BeginPlay()
 {
 	Super::BeginPlay();
 
-	ShowPlayerHUDWidget();
-	BindPlayerHUDToPawn();
+	if (IsInTitleLevel())
+	{
+		ShowTitleMenuWidget();
+	}
+	else
+	{
+		SetPause(false);
+		bShowMouseCursor = false;
+		SetInputMode(FInputModeGameOnly());
+		ShowPlayerHUDWidget();
+		BindPlayerHUDToPawn();
+	}
 
 	// only spawn touch controls on local player controllers
 	if (ShouldUseTouchControls() && IsLocalPlayerController())
@@ -140,6 +286,10 @@ void AExceptionPlayerController::SetPawn(APawn *InPawn)
 {
 	UnbindPlayerHUDFromPawn();
 	Super::SetPawn(InPawn);
+	if (IsInTitleLevel())
+	{
+		return;
+	}
 	BindPlayerHUDToPawn();
 	RefreshPlayerHUD();
 }
@@ -147,6 +297,11 @@ void AExceptionPlayerController::SetPawn(APawn *InPawn)
 void AExceptionPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
+
+	if (InputComponent)
+	{
+		InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &AExceptionPlayerController::TogglePauseMenuWidget);
+	}
 
 	// only add IMCs for local player controllers
 	if (IsLocalPlayerController())
@@ -189,7 +344,7 @@ void AExceptionPlayerController::HandlePlayerStaminaChanged(float CurrentValue, 
 
 void AExceptionPlayerController::BindPlayerHUDToPawn()
 {
-	if (!IsLocalPlayerController())
+	if (!IsLocalPlayerController() || IsInTitleLevel())
 	{
 		return;
 	}
@@ -410,4 +565,15 @@ void AExceptionPlayerController::UpdateGroggyGauge(float NormalizedValue)
 	const FString State = ClampedValue >= 1.0f ? TEXT("MAX") : ClampedValue >= 0.5f ? TEXT("HALF")
 																					: TEXT("EMPTY");
 	UpdateRuntimeGauge(TEXT("GroggyGauge"), FText::FromString(FString::Printf(TEXT("[GROGGY: %s // GAUGE: %03d]"), *State, GaugeValue)), ClampedValue, FLinearColor(1.0f, 0.9f, 0.0f, 1.0f));
+}
+
+bool AExceptionPlayerController::IsInTitleLevel() const
+{
+	const UWorld* World = GetWorld();
+	if (!World || TitleLevelName.IsNone())
+	{
+		return false;
+	}
+
+	return FName(*UGameplayStatics::GetCurrentLevelName(World, true)) == TitleLevelName;
 }

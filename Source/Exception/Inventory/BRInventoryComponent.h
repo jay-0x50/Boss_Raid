@@ -25,6 +25,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Exception|Inventory")
 	void SetCapacity(int32 NewCapacity);
 
+	UFUNCTION(BlueprintCallable, Category="Exception|Inventory")
+	void SetSlots(const TArray<FBRInventorySlot>& NewSlots);
+
 	UFUNCTION(BlueprintPure, Category="Exception|Inventory")
 	int32 GetCapacity() const { return Slots.Num(); }
 

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/SaveGame.h"
+#include "BRInventoryTypes.h"
 #include "BRSaveGame.generated.h"
 
 UCLASS(BlueprintType)
@@ -33,4 +34,7 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Save")
 	TArray<FName> DefeatedBossIds;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Save")
+	TArray<FBRInventorySlot> InventorySlots;
 };

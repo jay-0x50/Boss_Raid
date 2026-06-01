@@ -97,7 +97,7 @@ protected:
 
 	/** Max player HP for the boss raid demo */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Stats", meta=(ClampMin="1.0"))
-	float MaxHP = 100.0f;
+	float MaxHP = 1000.0f;
 
 	/** Max stamina used by attack, dodge, and parry */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Stats", meta=(ClampMin="1.0"))
@@ -149,13 +149,13 @@ protected:
 	float LightAttackDamage = 15.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Attack", meta=(ClampMin="0.0"))
-	float LightAttackGroggyDamage = 5.0f;
+	float LightAttackGroggyDamage = 10.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Attack", meta=(ClampMin="0.0"))
 	float HeavyAttackDamage = 35.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Attack", meta=(ClampMin="0.0"))
-	float HeavyAttackGroggyDamage = 20.0f;
+	float HeavyAttackGroggyDamage = 25.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Attack", meta=(ClampMin="0.0", Units="cm"))
 	float AttackTraceDistance = 160.0f;
