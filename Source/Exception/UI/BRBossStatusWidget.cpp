@@ -12,8 +12,22 @@ void UBRBossStatusWidget::ClearBosses()
 
 void UBRBossStatusWidget::SetBossCount(int32 BossCount)
 {
-	SetNamedVisibility(TEXT("BossSlot"), 0, BossCount >= 1);
-	SetNamedVisibility(TEXT("BossSlot"), 1, BossCount >= 2);
+	for (int32 BossIndex = 0; BossIndex < 8; ++BossIndex)
+	{
+		const bool bVisible = BossIndex < BossCount;
+		SetNamedVisibility(TEXT("BossSlot"), BossIndex, bVisible);
+
+		if (!bVisible)
+		{
+			SetNamedText(TEXT("BossNameText"), BossIndex, FText::GetEmpty());
+			SetNamedProgress(TEXT("HPBar"), BossIndex, 0.0f);
+			SetNamedProgress(TEXT("GroggyBar"), BossIndex, 0.0f);
+			SetNamedVisibility(TEXT("GroggyReadyText"), BossIndex, false);
+			SetNamedVisibility(TEXT("FinishPrompt"), BossIndex, false);
+			SetNamedVisibility(TEXT("ExecutePrompt"), BossIndex, false);
+		}
+	}
+
 	BP_SetBossCount(BossCount);
 }
 

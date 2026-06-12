@@ -1,7 +1,7 @@
 #include "BRCheckpoint.h"
 
 #include "BRSaveGameSubsystem.h"
-#include "ExceptionCharacter.h"
+#include "Player/Character/ExceptionCharacter.h"
 #include "ExceptionGameMode.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"

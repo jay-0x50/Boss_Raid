@@ -75,7 +75,7 @@ public:
 
 protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Inventory", meta=(ClampMin="1"))
-	int32 Capacity = 20;
+	int32 Capacity = 23;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Inventory")
 	TArray<FBRInventorySlot> InitialSlots;

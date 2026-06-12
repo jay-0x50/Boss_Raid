@@ -33,6 +33,21 @@ public:
 	float PlayerStamina = 100.0f;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Save")
+	int32 PlayerLevel = 1;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Save")
+	int32 UpgradePoints = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Save")
+	int32 VitalityLevel = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Save")
+	int32 EnduranceLevel = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Save")
+	int32 PowerLevel = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Save")
 	TArray<FName> DefeatedBossIds;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Save")

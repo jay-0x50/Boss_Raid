@@ -1,14 +1,16 @@
 #include "BRBossArenaTrigger.h"
 
-#include "BRBossBase.h"
+#include "Boss/Base/BRBossBase.h"
+#include "Boss/Team/BRBossTeamCoordinator.h"
 #include "BRBossStatusWidget.h"
-#include "ExceptionCharacter.h"
+#include "Player/Character/ExceptionCharacter.h"
 #include "ExceptionGameMode.h"
-#include "ExceptionPlayerController.h"
+#include "Player/Controller/ExceptionPlayerController.h"
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/Engine.h"
 #include "Engine/StaticMesh.h"
+#include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
@@ -29,6 +31,7 @@ ABRBossArenaTrigger::ABRBossArenaTrigger()
 	PreviewMesh->SetupAttachment(RootComponent);
 	PreviewMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	PreviewMesh->SetWorldScale3D(FVector(4.0f, 4.0f, 0.05f));
+	PreviewMesh->SetHiddenInGame(true);
 
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> CubeMesh(TEXT("/Engine/BasicShapes/Cube.Cube"));
 	if (CubeMesh.Succeeded())
@@ -50,16 +53,7 @@ void ABRBossArenaTrigger::BeginPlay()
 	BuildManagedBossList(ManagedBosses);
 	for (ABRBossBase* Boss : ManagedBosses)
 	{
-		if (Boss)
-		{
-			Boss->OnBossDead.AddDynamic(this, &ABRBossArenaTrigger::HandleBossDefeated);
-			Boss->OnBossHPChanged.AddDynamic(this, &ABRBossArenaTrigger::HandleBossStatChanged);
-			Boss->OnBossGroggyChanged.AddDynamic(this, &ABRBossArenaTrigger::HandleBossStatChanged);
-			Boss->OnBossGroggy.AddDynamic(this, &ABRBossArenaTrigger::HandleBossStateChanged);
-			Boss->OnBossRecoveredFromGroggy.AddDynamic(this, &ABRBossArenaTrigger::HandleBossStateChanged);
-			Boss->OnExecutionStarted.AddDynamic(this, &ABRBossArenaTrigger::HandleBossExecutionStateChanged);
-			Boss->OnExecutionCompleted.AddDynamic(this, &ABRBossArenaTrigger::HandleBossExecutionStateChanged);
-		}
+		BindBossEvents(Boss);
 	}
 
 	if (RewardActorToShowOnDefeat)
@@ -135,8 +129,15 @@ void ABRBossArenaTrigger::StartArena()
 		ExceptionGameMode->SetActiveBossArena(this);
 	}
 
+	SpawnConfiguredBossIfNeeded();
+
 	TArray<ABRBossBase*> ManagedBosses;
 	BuildManagedBossList(ManagedBosses);
+
+	if (ManagedBosses.IsEmpty() && GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(4005, 4.0f, FColor::Yellow, TEXT("Boss Arena has no boss. Set Boss Actors or Boss Class To Spawn."));
+	}
 
 	if (UBRBossStatusWidget* ActiveBossStatusWidget = ShowBossStatusWidget())
 	{
@@ -165,6 +166,78 @@ void ABRBossArenaTrigger::StartArena()
 	{
 		GEngine->AddOnScreenDebugMessage(4001, 2.0f, FColor::Red, TEXT("Boss Arena Started"));
 	}
+}
+
+ABRBossBase* ABRBossArenaTrigger::SpawnConfiguredBossIfNeeded()
+{
+	if (!bSpawnBossOnArenaStart || !BossClassToSpawn || !GetWorld())
+	{
+		return nullptr;
+	}
+
+	for (ABRBossBase* SpawnedBoss : SpawnedBosses)
+	{
+		if (IsValid(SpawnedBoss) && !SpawnedBoss->IsDead())
+		{
+			return SpawnedBoss;
+		}
+	}
+
+	FActorSpawnParameters SpawnParameters;
+	SpawnParameters.Owner = this;
+	SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+
+	ABRBossBase* SpawnedBoss = GetWorld()->SpawnActor<ABRBossBase>(
+		BossClassToSpawn,
+		GetConfiguredBossSpawnTransform(),
+		SpawnParameters);
+
+	if (!SpawnedBoss)
+	{
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(4006, 4.0f, FColor::Red, TEXT("Boss spawn failed. Check Boss Class To Spawn."));
+		}
+		return nullptr;
+	}
+
+	SpawnedBosses.AddUnique(SpawnedBoss);
+	BindBossEvents(SpawnedBoss);
+
+	if (bResetBossOnEnter)
+	{
+		SpawnedBoss->ResetBoss();
+	}
+
+	return SpawnedBoss;
+}
+
+FTransform ABRBossArenaTrigger::GetConfiguredBossSpawnTransform() const
+{
+	if (BossSpawnPoint)
+	{
+		return BossSpawnPoint->GetActorTransform();
+	}
+
+	FTransform SpawnTransform = GetActorTransform();
+	SpawnTransform.AddToTranslation(GetActorRotation().RotateVector(BossSpawnOffset));
+	return SpawnTransform;
+}
+
+void ABRBossArenaTrigger::BindBossEvents(ABRBossBase* Boss)
+{
+	if (!Boss)
+	{
+		return;
+	}
+
+	Boss->OnBossDead.AddUniqueDynamic(this, &ABRBossArenaTrigger::HandleBossDefeated);
+	Boss->OnBossHPChanged.AddUniqueDynamic(this, &ABRBossArenaTrigger::HandleBossStatChanged);
+	Boss->OnBossGroggyChanged.AddUniqueDynamic(this, &ABRBossArenaTrigger::HandleBossStatChanged);
+	Boss->OnBossGroggy.AddUniqueDynamic(this, &ABRBossArenaTrigger::HandleBossStateChanged);
+	Boss->OnBossRecoveredFromGroggy.AddUniqueDynamic(this, &ABRBossArenaTrigger::HandleBossStateChanged);
+	Boss->OnExecutionStarted.AddUniqueDynamic(this, &ABRBossArenaTrigger::HandleBossExecutionStateChanged);
+	Boss->OnExecutionCompleted.AddUniqueDynamic(this, &ABRBossArenaTrigger::HandleBossExecutionStateChanged);
 }
 
 void ABRBossArenaTrigger::ResetArenaForRetry()
@@ -262,17 +335,77 @@ void ABRBossArenaTrigger::BuildManagedBossList(TArray<ABRBossBase*>& OutBosses) 
 {
 	OutBosses.Reset();
 
+	const bool bHasConfiguredBosses = BossDummy || !BossActors.IsEmpty() || !SpawnedBosses.IsEmpty() || BossClassToSpawn;
+
 	for (ABRBossBase* Boss : BossActors)
 	{
-		if (Boss)
-		{
-			OutBosses.AddUnique(Boss);
-		}
+		AddBossAndLinkedTeam(Boss, OutBosses, false);
 	}
 
-	if (BossDummy)
+	AddBossAndLinkedTeam(BossDummy, OutBosses, false);
+
+	for (ABRBossBase* SpawnedBoss : SpawnedBosses)
 	{
-		OutBosses.AddUnique(BossDummy);
+		AddBossAndLinkedTeam(SpawnedBoss, OutBosses, false);
+	}
+
+	if (bAutoIncludeNearbyBosses && !bHasConfiguredBosses)
+	{
+		AddNearbyBosses(OutBosses);
+	}
+}
+
+void ABRBossArenaTrigger::AddBossAndLinkedTeam(ABRBossBase* Boss, TArray<ABRBossBase*>& OutBosses, bool bIncludeLinkedTeam) const
+{
+	if (!Boss)
+	{
+		return;
+	}
+
+	OutBosses.AddUnique(Boss);
+
+	if (bIncludeLinkedTeam && bAutoIncludeTeamMembers)
+	{
+		AddTeamMembers(Boss->GetTeamCoordinator(), OutBosses);
+	}
+}
+
+void ABRBossArenaTrigger::AddTeamMembers(ABRBossTeamCoordinator* TeamCoordinator, TArray<ABRBossBase*>& OutBosses) const
+{
+	if (!TeamCoordinator)
+	{
+		return;
+	}
+
+	TArray<ABRBossBase*> TeamMembers;
+	TeamCoordinator->GetTeamMembers(TeamMembers);
+	for (ABRBossBase* TeamMember : TeamMembers)
+	{
+		if (TeamMember)
+		{
+			OutBosses.AddUnique(TeamMember);
+		}
+	}
+}
+
+void ABRBossArenaTrigger::AddNearbyBosses(TArray<ABRBossBase*>& OutBosses) const
+{
+	if (!GetWorld() || AutoBossSearchRadius <= 0.0f)
+	{
+		return;
+	}
+
+	TArray<AActor*> FoundBossActors;
+	UGameplayStatics::GetAllActorsOfClass(this, ABRBossBase::StaticClass(), FoundBossActors);
+
+	const float SearchRadiusSq = FMath::Square(AutoBossSearchRadius);
+	for (AActor* FoundActor : FoundBossActors)
+	{
+		ABRBossBase* FoundBoss = Cast<ABRBossBase>(FoundActor);
+		if (FoundBoss && FVector::DistSquared(FoundBoss->GetActorLocation(), GetActorLocation()) <= SearchRadiusSq)
+		{
+			AddBossAndLinkedTeam(FoundBoss, OutBosses, true);
+		}
 	}
 }
 

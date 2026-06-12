@@ -2,7 +2,7 @@
 
 #include "BRSaveGame.h"
 #include "BRInventoryComponent.h"
-#include "ExceptionCharacter.h"
+#include "Player/Character/ExceptionCharacter.h"
 #include "ExceptionGameMode.h"
 #include "Kismet/GameplayStatics.h"
 
@@ -28,6 +28,11 @@ bool UBRSaveGameSubsystem::SaveCurrentGame(const FString& SlotName, int32 UserIn
 		SaveGame->PlayerTransform.SetScale3D(FVector::OneVector);
 		SaveGame->PlayerHP = PlayerCharacter->GetCurrentHP();
 		SaveGame->PlayerStamina = PlayerCharacter->GetCurrentStamina();
+		SaveGame->PlayerLevel = PlayerCharacter->GetPlayerLevel();
+		SaveGame->UpgradePoints = PlayerCharacter->GetUpgradePoints();
+		SaveGame->VitalityLevel = PlayerCharacter->GetVitalityLevel();
+		SaveGame->EnduranceLevel = PlayerCharacter->GetEnduranceLevel();
+		SaveGame->PowerLevel = PlayerCharacter->GetPowerLevel();
 		if (UBRInventoryComponent* InventoryComponent = PlayerCharacter->GetInventoryComponent())
 		{
 			SaveGame->InventorySlots = InventoryComponent->GetSlots();
@@ -97,6 +102,7 @@ bool UBRSaveGameSubsystem::ApplyPendingLoadedGame()
 
 	const FTransform RestoreTransform = PendingSaveGame->bHasCheckpoint ? PendingSaveGame->CheckpointTransform : PendingSaveGame->PlayerTransform;
 	PlayerCharacter->SetActorTransform(RestoreTransform, false, nullptr, ETeleportType::TeleportPhysics);
+	PlayerCharacter->ApplySavedProgression(PendingSaveGame->PlayerLevel, PendingSaveGame->UpgradePoints, PendingSaveGame->VitalityLevel, PendingSaveGame->EnduranceLevel, PendingSaveGame->PowerLevel);
 	PlayerCharacter->ApplySavedStats(PendingSaveGame->PlayerHP, PendingSaveGame->PlayerStamina);
 	if (UBRInventoryComponent* InventoryComponent = PlayerCharacter->GetInventoryComponent())
 	{

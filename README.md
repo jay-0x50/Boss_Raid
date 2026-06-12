@@ -2,7 +2,7 @@
 
 Unreal Engine 5.7 기반의 보스 레이드 액션 RPG 데모입니다.
 
-플레이어는 붕괴된 Runtime 내부로 진입한 처리자이며, 폭주한 예외 개체를 보스전으로 제압합니다. 현재 MVP는 **Python 계열 듀얼 보스(Vethara + Aurathos)를 중심으로 한 1개 필드 사이클**을 목표로 개발 중입니다.
+플레이어는 붕괴된 Runtime 내부로 진입한 처리자이며, 폭주한 예외 개체를 보스전으로 제압합니다. 현재 MVP는 **Python 계열 듀얼 보스(Vethara + Aurathos)를 중심으로 한 1개 필드 사이클**을 기반으로, SQL 계열 보스 **Selvara** 전투를 확장 구현 중입니다.
 
 ## 핵심 방향
 
@@ -37,6 +37,8 @@ Unreal Engine 5.7 기반의 보스 레이드 액션 RPG 데모입니다.
 - Python 듀얼 보스 2체
   - `Vethara, Unhandled Exception`
   - `Aurathos, Fatal Process`
+- 확장 보스
+  - `Selvara, Abyssal Database`
 - 플레이어 액션
   - 약공격
   - 강공격
@@ -87,21 +89,26 @@ Unreal Engine 5.7 기반의 보스 레이드 액션 RPG 데모입니다.
 - 팀 코디네이터 기반 다중 보스 공격 조율
 - Python 듀얼 보스 베이스
 - `Vethara`, `Aurathos` 보스 클래스
+- `Selvara` 보스 클래스
+- 패턴 공격 전 사거리/범위 텔레그래프 표시
 - 보스 아레나 트리거
+- 트리거별 보스 직접 지정 / 클래스 스폰 지원
+- Static Mesh / Skeletal Mesh 보스 외형 선택 지원
 - 보스 사망 시 게이트/보상 액터 처리
 
 ### UI
 
-- 플레이어 HUD
+- C++ 플레이어 HUD
+  - 좌상단 HP / Stamina
+  - 좌하단 Q/E/R 숏컷
 - 보스 상태 HUD
   - HP Bar
   - Groggy Bar
   - 처형 가능 표시
-  - 1체/2체 보스 슬롯 지원
-- Pause Menu 백엔드
+  - 1체/2체 이상 보스 슬롯 정리 및 초기화
+- C++ Pause Menu
   - Resume
-  - Inventory
-  - Settings
+  - Level Up
   - Save Game
   - Return To Title
   - Quit Game
@@ -121,6 +128,7 @@ Unreal Engine 5.7 기반의 보스 레이드 액션 RPG 데모입니다.
 ### 인벤토리
 
 - 슬롯 기반 인벤토리 컴포넌트
+- C++ 인벤토리 UI
 - 아이템 추가 / 제거
 - 슬롯 이동
 - 사용 가능 아이템 처리
@@ -180,23 +188,26 @@ Unreal Engine 5.7 기반의 보스 레이드 액션 RPG 데모입니다.
 ## 주요 코드 위치
 
 ```text
-Source/Exception/Player/ExceptionCharacter.*
+Source/Exception/Player/Character/ExceptionCharacter.*
 플레이어 이동, 전투, 락온, 처형, 피격, 리스폰
 
-Source/Exception/Player/ExceptionPlayerController.*
+Source/Exception/Player/Controller/ExceptionPlayerController.*
 HUD, Pause Menu, Title Menu, 입력 모드, 메뉴 저장/종료
 
-Source/Exception/Boss/BRBossBase.*
+Source/Exception/Boss/Base/BRBossBase.*
 보스 공통 HP, Groggy, Phase, 처형 상태
 
-Source/Exception/Boss/BRPythonBoss.*
+Source/Exception/Boss/Python/BRPythonBoss.*
 Python 듀얼 보스 공통 패턴 구성
 
-Source/Exception/Boss/BRBossTeamCoordinator.*
+Source/Exception/Boss/Selvara/BRSelvaraBoss.*
+Selvara 보스 패턴 구성
+
+Source/Exception/Boss/Team/BRBossTeamCoordinator.*
 다중 보스 공격 조율
 
 Source/Exception/World/BRBossArenaTrigger.*
-보스전 시작, HUD 표시, 보스 사망 처리
+보스전 시작, 보스 클래스 스폰, HUD 표시, 보스 사망 처리
 
 Source/Exception/World/BRCheckpoint.*
 체크포인트 활성화, 회복, 자동 저장
@@ -209,6 +220,15 @@ Source/Exception/Save/BRSaveGameSubsystem.*
 
 Source/Exception/UI/BRBossStatusWidget.*
 보스 HUD 갱신
+
+Source/Exception/UI/BRPlayerHUDWidget.*
+플레이어 HUD 갱신
+
+Source/Exception/UI/BRPauseMenuWidget.*
+ESC 메뉴 / 레벨업 UI
+
+Source/Exception/UI/BRInventoryWidget.*
+C++ 인벤토리 UI
 ```
 
 ## 사용 기술
@@ -259,15 +279,14 @@ Unreal 프로젝트 특성상 자동 생성 파일과 캐시 파일은 Git에서
 
 ## 다음 개발 목표
 
-1. `L_Runtime_Field` 필드 동선 블록아웃 완성
-2. Python 보스방에 `Vethara` / `Aurathos` 2체 배치
-3. 보스 아레나 트리거와 2체 보스 HUD 최종 확인
-4. Python 보스 패턴 밸런싱
-5. 인벤토리 UI 슬롯 표시 완성
-6. 설정 메뉴 볼륨 옵션 연결
-7. BGM / SFX 적용
-8. 보스 처치 후 보상 및 다음 구역 개방 처리
-9. 패키징 테스트
+1. `L_Runtime_Field` 필드 동선 블록아웃 마감
+2. Python 듀얼 보스 패턴 밸런싱
+3. Selvara 블루프린트 메시/애니메이션/스케일 조정
+4. Selvara 보스방 트리거와 체력바 최종 확인
+5. 아이템 효과 및 보스 보상 연결
+6. BGM / SFX 적용
+7. 보스 처치 후 보상 및 다음 구역 개방 처리
+8. 패키징 테스트
 
 ## 개발 기록
 
@@ -283,3 +302,8 @@ Unreal 프로젝트 특성상 자동 생성 파일과 캐시 파일은 Git에서
 - Pause Menu / Title Menu / Continue 흐름 구현
 - 인벤토리 저장/로드 연동
 - `L_Runtime_Field` 신규 맵 추가
+- `Selvara, Abyssal Database` 보스 클래스 추가
+- C++ HUD / C++ Pause Menu / C++ Inventory UI 추가
+- 보스 클래스 기능별 폴더 분리
+- 보스 트리거 클래스 스폰 및 단일 보스 체력바 관리 개선
+- 보스 기본 더미 큐브 제거 및 Skeletal Mesh 외형 지원

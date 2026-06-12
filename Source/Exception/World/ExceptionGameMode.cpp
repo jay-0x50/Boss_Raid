@@ -4,8 +4,8 @@
 
 #include "BRBossArenaTrigger.h"
 #include "BRSaveGameSubsystem.h"
-#include "ExceptionCharacter.h"
-#include "ExceptionPlayerController.h"
+#include "Player/Character/ExceptionCharacter.h"
+#include "Player/Controller/ExceptionPlayerController.h"
 #include "UObject/ConstructorHelpers.h"
 #include "TimerManager.h"
 
