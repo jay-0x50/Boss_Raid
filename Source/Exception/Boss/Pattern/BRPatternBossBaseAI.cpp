@@ -40,6 +40,12 @@ void ABRPatternBossBase::UpdateBossAI(float DeltaSeconds)
 		return;
 	}
 
+	if (TeamRole != EBRBossTeamRole::Ranged && DistanceToTarget > MeleeStandbyDistance)
+	{
+		MoveTowardTarget(DeltaSeconds);
+		return;
+	}
+
 	const int32 PatternIndex = SelectPattern(DistanceToTarget);
 	if (PatternIndex != INDEX_NONE)
 	{
@@ -84,6 +90,11 @@ void ABRPatternBossBase::MoveTowardTarget(float DeltaSeconds)
 	const FVector ToTarget = CurrentTarget->GetActorLocation() - GetActorLocation();
 	const FVector MoveDirection = FVector(ToTarget.X, ToTarget.Y, 0.0f).GetSafeNormal();
 	if (MoveDirection.IsNearlyZero())
+	{
+		return;
+	}
+
+	if (ToTarget.Size2D() <= MeleeStandbyDistance)
 	{
 		return;
 	}

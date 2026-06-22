@@ -8,6 +8,7 @@
 class ABRBossAIController;
 class UBRStatComponent;
 class UBehaviorTree;
+class UCapsuleComponent;
 class USceneComponent;
 class UStaticMeshComponent;
 class USkeletalMeshComponent;
@@ -175,6 +176,9 @@ protected:
 	virtual FString GetBossDebugName() const;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
+	TObjectPtr<UCapsuleComponent> BossCollision;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
 	TObjectPtr<USceneComponent> SceneRoot;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
@@ -200,6 +204,12 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Visual", meta=(ClampMin="0.01"))
 	FVector MeshRelativeScale = FVector::OneVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Collision", meta=(ClampMin="1.0", Units="cm"))
+	float BossCollisionRadius = 120.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Collision", meta=(ClampMin="1.0", Units="cm"))
+	float BossCollisionHalfHeight = 160.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Stats", meta=(ClampMin="1.0"))
 	float InitialMaxHP = 300.0f;
@@ -268,6 +278,7 @@ protected:
 
 	void RecoverFromGroggy();
 	void RefreshPhaseByHP();
+	void ApplyBossCollisionSettings();
 	void ApplyMeshVisualTransform();
 	bool CanStartCoordinatedAttack() const;
 	bool NotifyCoordinatedAttackStarted();

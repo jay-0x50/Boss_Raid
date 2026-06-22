@@ -3,6 +3,7 @@
 #include "Boss/AI/BRBossAIController.h"
 #include "Boss/Team/BRBossTeamCoordinator.h"
 #include "BRStatComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -13,8 +14,17 @@ ABRBossBase::ABRBossBase()
 	AIControllerClass = ABRBossAIController::StaticClass();
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 
+	BossCollision = CreateDefaultSubobject<UCapsuleComponent>(TEXT("BossCollision"));
+	SetRootComponent(BossCollision);
+	BossCollision->InitCapsuleSize(BossCollisionRadius, BossCollisionHalfHeight);
+	BossCollision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	BossCollision->SetCollisionObjectType(ECC_Pawn);
+	BossCollision->SetCollisionResponseToAllChannels(ECR_Block);
+	BossCollision->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+	BossCollision->SetGenerateOverlapEvents(false);
+
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
-	SetRootComponent(SceneRoot);
+	SceneRoot->SetupAttachment(BossCollision);
 
 	VisualRoot = CreateDefaultSubobject<USceneComponent>(TEXT("VisualRoot"));
 	VisualRoot->SetupAttachment(SceneRoot);
@@ -51,24 +61,7 @@ void ABRBossBase::BeginPlay()
 		SpawnDefaultController();
 	}
 
-	if (MeshComponent)
-	{
-		MeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-		MeshComponent->SetCollisionObjectType(ECC_Pawn);
-		MeshComponent->SetCollisionResponseToAllChannels(ECR_Block);
-		MeshComponent->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
-		MeshComponent->SetGenerateOverlapEvents(false);
-	}
-
-	if (SkeletalMeshComponent)
-	{
-		SkeletalMeshComponent->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-		SkeletalMeshComponent->SetCollisionObjectType(ECC_Pawn);
-		SkeletalMeshComponent->SetCollisionResponseToAllChannels(ECR_Block);
-		SkeletalMeshComponent->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
-		SkeletalMeshComponent->SetGenerateOverlapEvents(false);
-	}
-
+	ApplyBossCollisionSettings();
 	ApplyMeshVisualTransform();
 
 	if (StatComponent)
@@ -101,6 +94,7 @@ void ABRBossBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void ABRBossBase::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
+	ApplyBossCollisionSettings();
 	ApplyMeshVisualTransform();
 }
 
@@ -145,7 +139,8 @@ void ABRBossBase::ApplyMeshVisualTransform()
 		MeshComponent->SetRelativeScale3D(MeshRelativeScale);
 		MeshComponent->SetVisibility(bUseStaticMesh);
 		MeshComponent->SetHiddenInGame(!bUseStaticMesh);
-		MeshComponent->SetCollisionEnabled(bUseStaticMesh ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
+		MeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		MeshComponent->SetGenerateOverlapEvents(false);
 	}
 
 	if (SkeletalMeshComponent)
@@ -155,8 +150,28 @@ void ABRBossBase::ApplyMeshVisualTransform()
 		SkeletalMeshComponent->SetRelativeScale3D(MeshRelativeScale);
 		SkeletalMeshComponent->SetVisibility(bUseSkeletalMesh);
 		SkeletalMeshComponent->SetHiddenInGame(!bUseSkeletalMesh);
-		SkeletalMeshComponent->SetCollisionEnabled(bUseSkeletalMesh ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
+		SkeletalMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		SkeletalMeshComponent->SetGenerateOverlapEvents(false);
+		if (bUseSkeletalMesh && SkeletalMeshComponent->GetAnimationMode() == EAnimationMode::AnimationSingleNode)
+		{
+			SkeletalMeshComponent->Play(true);
+		}
 	}
+}
+
+void ABRBossBase::ApplyBossCollisionSettings()
+{
+	if (!BossCollision)
+	{
+		return;
+	}
+
+	BossCollision->SetCapsuleSize(BossCollisionRadius, BossCollisionHalfHeight, true);
+	BossCollision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	BossCollision->SetCollisionObjectType(ECC_Pawn);
+	BossCollision->SetCollisionResponseToAllChannels(ECR_Block);
+	BossCollision->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+	BossCollision->SetGenerateOverlapEvents(false);
 }
 
 void ABRBossBase::ClearBaseTimers()

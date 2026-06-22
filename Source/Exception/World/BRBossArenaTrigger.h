@@ -19,6 +19,9 @@ public:
 	ABRBossArenaTrigger();
 
 	UFUNCTION(BlueprintCallable, Category="Exception|Arena")
+	void ActivateArena();
+
+	UFUNCTION(BlueprintCallable, Category="Exception|Arena")
 	void ResetArenaForRetry();
 
 protected:
@@ -58,10 +61,16 @@ protected:
 	bool bResetBossOnEnter = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Arena")
+	bool bStartOnPlayerOverlap = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Arena")
 	bool bAutoIncludeTeamMembers = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Arena")
 	bool bAutoIncludeNearbyBosses = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Arena")
+	bool bDeactivateUnmanagedBossesOnStart = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Arena", meta=(ClampMin="0.0", Units="cm"))
 	float AutoBossSearchRadius = 5000.0f;
@@ -101,6 +110,7 @@ protected:
 	void AddBossAndLinkedTeam(ABRBossBase* Boss, TArray<ABRBossBase*>& OutBosses, bool bIncludeLinkedTeam) const;
 	void AddTeamMembers(ABRBossTeamCoordinator* TeamCoordinator, TArray<ABRBossBase*>& OutBosses) const;
 	void AddNearbyBosses(TArray<ABRBossBase*>& OutBosses) const;
+	void DeactivateUnmanagedBosses(const TArray<ABRBossBase*>& ManagedBosses) const;
 	bool AreAllManagedBossesDead() const;
 	UBRBossStatusWidget* ShowBossStatusWidget();
 	void RefreshBossStatusWidget();

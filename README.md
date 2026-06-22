@@ -1,8 +1,8 @@
 # Exception
 
-Unreal Engine 5.7 기반의 보스 레이드 액션 RPG 데모입니다.
+Unreal Engine 5.8 기반의 보스 레이드 액션 RPG 데모입니다.
 
-플레이어는 붕괴된 Runtime 내부로 진입한 처리자이며, 폭주한 예외 개체를 보스전으로 제압합니다. 현재 MVP는 **Python 계열 듀얼 보스(Vethara + Aurathos)를 중심으로 한 1개 필드 사이클**을 기반으로, SQL 계열 보스 **Selvara** 전투를 확장 구현 중입니다.
+플레이어는 붕괴된 Runtime 내부로 진입한 처리자이며, 폭주한 예외 개체를 보스전으로 제압합니다. 현재 메인 흐름은 **필드 → Python 듀얼 보스(Vethara + Aurathos) → 필드 → Perl 보스(Vritra) → 필드 → CMD 최종 보스(NULL)** 구조입니다.
 
 ## 핵심 방향
 
@@ -22,7 +22,11 @@ Unreal Engine 5.7 기반의 보스 레이드 액션 RPG 데모입니다.
 → 그로기 누적
 → 처형
 → 보스 처치
-→ 보상 / 다음 구역 확장
+→ 필드 복귀 / 다음 구역 개방
+→ Perl 보스 Vritra
+→ 필드 복귀 / CMD 구역 진입
+→ 최종 보스 NULL
+→ 엔딩 로그
 ```
 
 패배 시에는 체크포인트에서 리스폰하며, 보스전 상태는 다시 도전 가능한 상태로 초기화됩니다.
@@ -31,13 +35,19 @@ Unreal Engine 5.7 기반의 보스 레이드 액션 RPG 데모입니다.
 
 현재 MVP 기준은 아래와 같습니다.
 
-- 필드 1개
+- 필드 3구간
 - 체크포인트 1개 이상
 - Python 보스방 1개
 - Python 듀얼 보스 2체
   - `Vethara, Unhandled Exception`
   - `Aurathos, Fatal Process`
-- 확장 보스
+- Perl 보스방 1개
+- Perl 보스 1체
+  - `Vritra, Perl Nomad`
+- CMD 최종 보스방 1개
+- CMD 최종 보스 1체
+  - `NULL, The First Command`
+- 보류 / 확장 보스
   - `Selvara, Abyssal Database`
 - 플레이어 액션
   - 약공격
@@ -89,6 +99,7 @@ Unreal Engine 5.7 기반의 보스 레이드 액션 RPG 데모입니다.
 - 팀 코디네이터 기반 다중 보스 공격 조율
 - Python 듀얼 보스 베이스
 - `Vethara`, `Aurathos` 보스 클래스
+- `Vritra` 보스 클래스
 - `Selvara` 보스 클래스
 - 패턴 공격 전 사거리/범위 텔레그래프 표시
 - 보스 아레나 트리거
@@ -203,6 +214,9 @@ Python 듀얼 보스 공통 패턴 구성
 Source/Exception/Boss/Selvara/BRSelvaraBoss.*
 Selvara 보스 패턴 구성
 
+Source/Exception/Boss/Perl/BRVritraBoss.*
+Vritra 보스 패턴 구성
+
 Source/Exception/Boss/Team/BRBossTeamCoordinator.*
 다중 보스 공격 조율
 
@@ -233,7 +247,7 @@ C++ 인벤토리 UI
 
 ## 사용 기술
 
-- Unreal Engine 5.7
+- Unreal Engine 5.8
 - C++
 - Blueprint
 - Enhanced Input
@@ -281,12 +295,13 @@ Unreal 프로젝트 특성상 자동 생성 파일과 캐시 파일은 Git에서
 
 1. `L_Runtime_Field` 필드 동선 블록아웃 마감
 2. Python 듀얼 보스 패턴 밸런싱
-3. Selvara 블루프린트 메시/애니메이션/스케일 조정
-4. Selvara 보스방 트리거와 체력바 최종 확인
-5. 아이템 효과 및 보스 보상 연결
-6. BGM / SFX 적용
-7. 보스 처치 후 보상 및 다음 구역 개방 처리
-8. 패키징 테스트
+3. Vritra 블루프린트 메시/애니메이션/스케일 조정
+4. Vritra 보스방 트리거와 체력바 최종 확인
+5. NULL 최종 보스 기획/패턴 클래스 추가
+6. 아이템 효과 및 보스 보상 연결
+7. BGM / SFX 적용
+8. 보스 처치 후 보상 및 다음 구역 개방 처리
+9. 패키징 테스트
 
 ## 개발 기록
 
@@ -303,6 +318,7 @@ Unreal 프로젝트 특성상 자동 생성 파일과 캐시 파일은 Git에서
 - 인벤토리 저장/로드 연동
 - `L_Runtime_Field` 신규 맵 추가
 - `Selvara, Abyssal Database` 보스 클래스 추가
+- `Vritra, Perl Nomad` 보스 클래스 추가
 - C++ HUD / C++ Pause Menu / C++ Inventory UI 추가
 - 보스 클래스 기능별 폴더 분리
 - 보스 트리거 클래스 스폰 및 단일 보스 체력바 관리 개선

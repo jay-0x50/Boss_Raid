@@ -359,6 +359,12 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> RuntimeLockOnAction;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> RuntimeBossPlate1Action;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> RuntimeBossPlate2Action;
+
 public:
 
 	/** Constructor */
@@ -387,6 +393,9 @@ protected:
 	void ParryPressed();
 	void InteractPressed();
 	void LockOnPressed();
+	void BossPlate1Pressed();
+	void BossPlate2Pressed();
+	void ActivateBossPlateByIndex(int32 PlateIndex);
 	void SetupRuntimeCombatInput(class UEnhancedInputComponent* EnhancedInputComponent);
 
 public:

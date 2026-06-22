@@ -9,6 +9,7 @@
 #include "InputAction.h"
 #include "InputActionValue.h"
 #include "InputMappingContext.h"
+#include "World/BRBossActivationPlate.h"
 
 void AExceptionCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
 {
@@ -101,6 +102,21 @@ void AExceptionCharacter::LockOnPressed()
 	ToggleLockOn();
 }
 
+void AExceptionCharacter::BossPlate1Pressed()
+{
+	ActivateBossPlateByIndex(1);
+}
+
+void AExceptionCharacter::BossPlate2Pressed()
+{
+	ActivateBossPlateByIndex(2);
+}
+
+void AExceptionCharacter::ActivateBossPlateByIndex(int32 PlateIndex)
+{
+	ABRBossActivationPlate::ActivatePlateByIndex(this, PlateIndex, this);
+}
+
 void AExceptionCharacter::SetupRuntimeCombatInput(UEnhancedInputComponent* EnhancedInputComponent)
 {
 	if (!EnhancedInputComponent)
@@ -167,6 +183,18 @@ void AExceptionCharacter::SetupRuntimeCombatInput(UEnhancedInputComponent* Enhan
 		EnhancedInputComponent->BindAction(RuntimeLockOnAction, ETriggerEvent::Started, this, &AExceptionCharacter::LockOnPressed);
 		bNeedsRuntimeMapping = true;
 	}
+
+	RuntimeBossPlate1Action = NewObject<UInputAction>(this, TEXT("IA_RuntimeBossPlate1"));
+	RuntimeBossPlate1Action->ValueType = EInputActionValueType::Boolean;
+	RuntimeCombatMappingContext->MapKey(RuntimeBossPlate1Action, EKeys::One);
+	EnhancedInputComponent->BindAction(RuntimeBossPlate1Action, ETriggerEvent::Started, this, &AExceptionCharacter::BossPlate1Pressed);
+	bNeedsRuntimeMapping = true;
+
+	RuntimeBossPlate2Action = NewObject<UInputAction>(this, TEXT("IA_RuntimeBossPlate2"));
+	RuntimeBossPlate2Action->ValueType = EInputActionValueType::Boolean;
+	RuntimeCombatMappingContext->MapKey(RuntimeBossPlate2Action, EKeys::Two);
+	EnhancedInputComponent->BindAction(RuntimeBossPlate2Action, ETriggerEvent::Started, this, &AExceptionCharacter::BossPlate2Pressed);
+	bNeedsRuntimeMapping = true;
 
 	if (bNeedsRuntimeMapping)
 	{

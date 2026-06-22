@@ -64,7 +64,7 @@ void ABRBossArenaTrigger::BeginPlay()
 
 	GetWorldTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this]()
 	{
-		if (bArenaStarted || bArenaCleared || !TriggerBox)
+		if (!bStartOnPlayerOverlap || bArenaStarted || bArenaCleared || !TriggerBox)
 		{
 			return;
 		}
@@ -86,7 +86,7 @@ void ABRBossArenaTrigger::BeginPlay()
 			RetryOverlapTimerHandle,
 			FTimerDelegate::CreateWeakLambda(this, [this]()
 			{
-				if (bArenaStarted || bArenaCleared || !TriggerBox)
+				if (!bStartOnPlayerOverlap || bArenaStarted || bArenaCleared || !TriggerBox)
 				{
 					return;
 				}
@@ -107,11 +107,16 @@ void ABRBossArenaTrigger::BeginPlay()
 
 void ABRBossArenaTrigger::OnTriggerBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
-	if (bArenaStarted || bArenaCleared || !Cast<AExceptionCharacter>(OtherActor))
+	if (!bStartOnPlayerOverlap || bArenaStarted || bArenaCleared || !Cast<AExceptionCharacter>(OtherActor))
 	{
 		return;
 	}
 
+	ActivateArena();
+}
+
+void ABRBossArenaTrigger::ActivateArena()
+{
 	StartArena();
 }
 
@@ -133,6 +138,11 @@ void ABRBossArenaTrigger::StartArena()
 
 	TArray<ABRBossBase*> ManagedBosses;
 	BuildManagedBossList(ManagedBosses);
+
+	if (bDeactivateUnmanagedBossesOnStart)
+	{
+		DeactivateUnmanagedBosses(ManagedBosses);
+	}
 
 	if (ManagedBosses.IsEmpty() && GEngine)
 	{
@@ -339,14 +349,14 @@ void ABRBossArenaTrigger::BuildManagedBossList(TArray<ABRBossBase*>& OutBosses) 
 
 	for (ABRBossBase* Boss : BossActors)
 	{
-		AddBossAndLinkedTeam(Boss, OutBosses, false);
+		AddBossAndLinkedTeam(Boss, OutBosses, true);
 	}
 
-	AddBossAndLinkedTeam(BossDummy, OutBosses, false);
+	AddBossAndLinkedTeam(BossDummy, OutBosses, true);
 
 	for (ABRBossBase* SpawnedBoss : SpawnedBosses)
 	{
-		AddBossAndLinkedTeam(SpawnedBoss, OutBosses, false);
+		AddBossAndLinkedTeam(SpawnedBoss, OutBosses, true);
 	}
 
 	if (bAutoIncludeNearbyBosses && !bHasConfiguredBosses)
@@ -405,6 +415,25 @@ void ABRBossArenaTrigger::AddNearbyBosses(TArray<ABRBossBase*>& OutBosses) const
 		if (FoundBoss && FVector::DistSquared(FoundBoss->GetActorLocation(), GetActorLocation()) <= SearchRadiusSq)
 		{
 			AddBossAndLinkedTeam(FoundBoss, OutBosses, true);
+		}
+	}
+}
+
+void ABRBossArenaTrigger::DeactivateUnmanagedBosses(const TArray<ABRBossBase*>& ManagedBosses) const
+{
+	if (!GetWorld())
+	{
+		return;
+	}
+
+	TArray<AActor*> FoundBossActors;
+	UGameplayStatics::GetAllActorsOfClass(this, ABRBossBase::StaticClass(), FoundBossActors);
+	for (AActor* FoundActor : FoundBossActors)
+	{
+		ABRBossBase* FoundBoss = Cast<ABRBossBase>(FoundActor);
+		if (FoundBoss && !ManagedBosses.Contains(FoundBoss))
+		{
+			FoundBoss->SetCombatAIEnabled(false);
 		}
 	}
 }
