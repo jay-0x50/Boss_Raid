@@ -22,6 +22,9 @@ struct FBRBossPatternData
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Pattern")
 	FName PatternName = TEXT("Basic");
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation")
+	FName AnimationActionName = NAME_None;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Pattern")
 	EBRBossPatternType PatternType = EBRBossPatternType::Melee;
 
@@ -110,7 +113,7 @@ protected:
 	float Phase2CooldownMultiplier = 0.75f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|AI", meta=(ClampMin="0.0"))
-	float RotationInterpSpeed = 4.0f;
+	float RotationInterpSpeed = 0.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Team", meta=(ClampMin="0.0", Units="cm"))
 	float MeleeStandbyDistance = 520.0f;

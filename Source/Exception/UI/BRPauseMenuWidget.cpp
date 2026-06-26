@@ -95,7 +95,23 @@ void UBRPauseMenuWidget::HandleSaveClicked()
 {
 	if (AExceptionPlayerController* ExceptionPC = Cast<AExceptionPlayerController>(GetOwningPlayer()))
 	{
-		ExceptionPC->SaveGameFromPauseMenu();
+		const bool bSaved = ExceptionPC->SaveGameFromPauseMenu();
+		if (StatusText)
+		{
+			StatusText->SetText(bSaved ? FText::FromString(TEXT("Save complete.")) : FText::FromString(TEXT("Save failed.")));
+		}
+	}
+}
+
+void UBRPauseMenuWidget::HandleInventoryClicked()
+{
+	if (AExceptionPlayerController* ExceptionPC = Cast<AExceptionPlayerController>(GetOwningPlayer()))
+	{
+		ExceptionPC->ShowInventoryWidget();
+		if (StatusText)
+		{
+			StatusText->SetText(FText::FromString(TEXT("Inventory opened.")));
+		}
 	}
 }
 
@@ -155,11 +171,23 @@ void UBRPauseMenuWidget::BuildMenuWidget()
 		TitleSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 16.0f));
 	}
 
+	StatusText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("MenuStatusText"));
+	StatusText->SetText(FText::FromString(TEXT("Ready.")));
+	StatusText->SetColorAndOpacity(FSlateColor(FLinearColor(0.0f, 0.95f, 0.86f, 1.0f)));
+	StatusText->SetFont(FSlateFontInfo(FCoreStyle::GetDefaultFont(), 13));
+	if (UVerticalBoxSlot* StatusSlot = CommandBox->AddChildToVerticalBox(StatusText))
+	{
+		StatusSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 12.0f));
+	}
+
 	UButton* ResumeButton = AddMenuButton(CommandBox, FText::FromString(TEXT("Resume")));
 	ResumeButton->OnClicked.AddUniqueDynamic(this, &UBRPauseMenuWidget::HandleResumeClicked);
 
 	UButton* SaveButton = AddMenuButton(CommandBox, FText::FromString(TEXT("Save")));
 	SaveButton->OnClicked.AddUniqueDynamic(this, &UBRPauseMenuWidget::HandleSaveClicked);
+
+	UButton* InventoryButton = AddMenuButton(CommandBox, FText::FromString(TEXT("Inventory")));
+	InventoryButton->OnClicked.AddUniqueDynamic(this, &UBRPauseMenuWidget::HandleInventoryClicked);
 
 	UButton* TitleButton = AddMenuButton(CommandBox, FText::FromString(TEXT("Return to Title")));
 	TitleButton->OnClicked.AddUniqueDynamic(this, &UBRPauseMenuWidget::HandleTitleClicked);
@@ -194,6 +222,31 @@ void UBRPauseMenuWidget::BuildMenuWidget()
 		StatText->SetColorAndOpacity(FSlateColor(FLinearColor::White));
 		StatText->SetFont(FSlateFontInfo(FCoreStyle::GetDefaultFont(), 14));
 		LevelBox->AddChildToVerticalBox(StatText);
+	}
+
+	UTextBlock* SettingsTitleText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("SettingsTitleText"));
+	SettingsTitleText->SetText(FText::FromString(TEXT("SETTINGS")));
+	SettingsTitleText->SetColorAndOpacity(FSlateColor(FLinearColor(0.0f, 0.95f, 0.86f, 1.0f)));
+	SettingsTitleText->SetFont(FSlateFontInfo(FCoreStyle::GetDefaultFont(), 18));
+	if (UVerticalBoxSlot* SettingsTitleSlot = LevelBox->AddChildToVerticalBox(SettingsTitleText))
+	{
+		SettingsTitleSlot->SetPadding(FMargin(0.0f, 22.0f, 0.0f, 8.0f));
+	}
+
+	const TCHAR* SettingsLines[] =
+	{
+		TEXT("ESC : Open / Close Menu"),
+		TEXT("I   : Inventory"),
+		TEXT("Q/E/R : Shortcut Slots")
+	};
+
+	for (const TCHAR* SettingsLine : SettingsLines)
+	{
+		UTextBlock* SettingsText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+		SettingsText->SetText(FText::FromString(SettingsLine));
+		SettingsText->SetColorAndOpacity(FSlateColor(FLinearColor(0.9f, 0.86f, 0.76f, 1.0f)));
+		SettingsText->SetFont(FSlateFontInfo(FCoreStyle::GetDefaultFont(), 13));
+		LevelBox->AddChildToVerticalBox(SettingsText);
 	}
 
 	UButton* VitalityButton = AddMenuButton(LevelBox, FText::FromString(TEXT("Level Vitality")));

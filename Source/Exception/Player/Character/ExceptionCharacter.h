@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "BRInventoryTypes.h"
 #include "GameFramework/Character.h"
 #include "Logging/LogMacros.h"
 #include "ExceptionCharacter.generated.h"
@@ -15,6 +16,8 @@ class UAnimMontage;
 class UBRInventoryComponent;
 class ABRBossBase;
 struct FInputActionValue;
+struct FBRInventoryItemDefinition;
+struct FBRInventorySlot;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogTemplateCharacter, Log, All);
 
@@ -143,6 +146,9 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Progression", meta=(ClampMin="0.0"))
 	float DamagePerPowerLevel = 3.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Progression", meta=(ClampMin="0.0"))
+	int32 BossKillUpgradePointReward = 1;
+
 	// 스태미나 소모량
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Cost", meta=(ClampMin="0.0"))
 	float LightAttackStaminaCost = 10.0f;
@@ -194,6 +200,12 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Attack", meta=(ClampMin="0.0"))
 	float HeavyAttackGroggyDamage = 25.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Attack", meta=(ClampMin="1.0"))
+	float HiddenRootWeaponDamageMultiplier = 1.75f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Attack", meta=(ClampMin="1.0"))
+	float HiddenRootWeaponCMDDamageMultiplier = 2.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Attack", meta=(ClampMin="0.0", Units="cm"))
 	float AttackTraceDistance = 160.0f;
@@ -365,6 +377,9 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> RuntimeBossPlate2Action;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> RuntimeBossPlate3Action;
+
 public:
 
 	/** Constructor */
@@ -395,6 +410,7 @@ protected:
 	void LockOnPressed();
 	void BossPlate1Pressed();
 	void BossPlate2Pressed();
+	void BossPlate3Pressed();
 	void ActivateBossPlateByIndex(int32 PlateIndex);
 	void SetupRuntimeCombatInput(class UEnhancedInputComponent* EnhancedInputComponent);
 
@@ -456,6 +472,12 @@ public:
 	void RestoreHPAndStamina();
 
 	UFUNCTION(BlueprintCallable, Category="Exception|Stats")
+	void HealHP(float Amount);
+
+	UFUNCTION(BlueprintCallable, Category="Exception|Stats")
+	void RestoreStamina(float Amount);
+
+	UFUNCTION(BlueprintCallable, Category="Exception|Stats")
 	void ApplySavedStats(float SavedHP, float SavedStamina);
 
 	UFUNCTION(BlueprintCallable, Category="Exception|Progression")
@@ -493,6 +515,24 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category="Exception|Progression")
 	bool SpendUpgradePoint(EBRPlayerUpgradeStat UpgradeStat);
+
+	UFUNCTION(BlueprintCallable, Category="Exception|Progression")
+	void AwardBossVictoryRewards(AActor* DefeatedBoss);
+
+	UFUNCTION(BlueprintCallable, Category="Exception|Inventory")
+	void GrantDefaultLoadout();
+
+	UFUNCTION(BlueprintCallable, Category="Exception|Inventory")
+	bool HasInventoryItem(FName ItemId) const;
+
+	UFUNCTION(BlueprintCallable, Category="Exception|Hidden Story")
+	void CompleteNelHiddenRequest(FName RequestId);
+
+	UFUNCTION(BlueprintCallable, Category="Exception|Hidden Story")
+	void CollectHiddenFragment(int32 Amount = 1);
+
+	UFUNCTION(BlueprintCallable, Category="Exception|Hidden Story")
+	void RefreshHiddenStoryRewards();
 
 	UFUNCTION(BlueprintPure, Category="Exception|Inventory")
 	UBRInventoryComponent* GetInventoryComponent() const { return InventoryComponent; }
@@ -558,6 +598,14 @@ protected:
 	ABRBossBase* FindExecutionTarget() const;
 	void StartExecution(ABRBossBase* Target);
 	void FinishExecution();
+	float GetEffectiveAttackDamage(float BaseDamage, AActor* TargetActor) const;
+
+	UFUNCTION()
+	void HandleInventoryItemUsed(int32 SlotIndex, const FBRInventorySlot& Slot);
+
+	FBRInventoryItemDefinition MakePotionItem() const;
+	FBRInventoryItemDefinition MakeStaminaItem() const;
+	FBRInventoryItemDefinition MakeHiddenRootWeaponItem() const;
 
 public:
 

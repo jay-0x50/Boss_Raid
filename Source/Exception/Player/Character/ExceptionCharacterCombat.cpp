@@ -135,15 +135,16 @@ void AExceptionCharacter::PerformAttackTrace(float Damage, float GroggyDamage)
 		}
 
 		DamagedActors.Add(HitActor);
+		const float EffectiveDamage = GetEffectiveAttackDamage(Damage, HitActor);
 		if (HitActor->GetClass()->ImplementsInterface(UBRCombatInterface::StaticClass()))
 		{
-			IBRCombatInterface::Execute_ReceiveCombatHit(HitActor, Damage, GroggyDamage, this);
+			IBRCombatInterface::Execute_ReceiveCombatHit(HitActor, EffectiveDamage, GroggyDamage, this);
 		}
 		else
 		{
-			UGameplayStatics::ApplyDamage(HitActor, Damage, GetController(), this, UDamageType::StaticClass());
+			UGameplayStatics::ApplyDamage(HitActor, EffectiveDamage, GetController(), this, UDamageType::StaticClass());
 		}
-		BP_AttackHit(HitActor, Damage);
+		BP_AttackHit(HitActor, EffectiveDamage);
 		++LastAttackHitCount;
 
 		if (bDrawAttackTraceDebug)
@@ -151,6 +152,21 @@ void AExceptionCharacter::PerformAttackTrace(float Damage, float GroggyDamage)
 			DrawDebugSphere(World, Hit.ImpactPoint, 18.0f, 12, FColor::Yellow, false, 1.0f);
 		}
 	}
+}
+
+float AExceptionCharacter::GetEffectiveAttackDamage(float BaseDamage, AActor* TargetActor) const
+{
+	float Damage = BaseDamage;
+	if (HasInventoryItem(TEXT("Weapon_MimikatzAuthoritySeized")))
+	{
+		Damage *= HiddenRootWeaponDamageMultiplier;
+		if (TargetActor && TargetActor->GetClass()->GetName().Contains(TEXT("CMD")))
+		{
+			Damage *= HiddenRootWeaponCMDDamageMultiplier;
+		}
+	}
+
+	return Damage;
 }
 
 float AExceptionCharacter::TakeDamage(float Damage, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)

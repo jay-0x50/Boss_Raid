@@ -12,16 +12,15 @@ ABRVritraBoss::ABRVritraBoss()
 	MoveSpeed = 165.0f;
 	Phase2MoveSpeedMultiplier = 1.22f;
 	Phase2CooldownMultiplier = 0.7f;
-	RotationInterpSpeed = 2.8f;
+	RotationInterpSpeed = 0.0f;
 	MeleeStandbyDistance = 260.0f;
 	RangedStandbyDistance = 1020.0f;
 	RangedComfortMinDistance = 620.0f;
 	VisualMeshType = EBRBossVisualMeshType::SkeletalMesh;
 	MeshRelativeLocation = FVector(0.0f, 0.0f, -90.0f);
-	MeshRelativeRotation = FRotator(0.0f, -90.0f, 0.0f);
+	MeshRelativeRotation = FRotator::ZeroRotator;
 	MeshRelativeScale = FVector(100.0f, 100.0f, 100.0f);
-	BossCollisionRadius = 95.0f;
-	BossCollisionHalfHeight = 130.0f;
+	GroundTraceActorHalfHeight = 130.0f;
 
 	ConfigureVritraPatterns();
 }

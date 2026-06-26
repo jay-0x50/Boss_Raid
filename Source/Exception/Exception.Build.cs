@@ -24,6 +24,11 @@ public class Exception : ModuleRules
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
 
+		if (Target.bBuildEditor)
+		{
+			PrivateDependencyModuleNames.Add("UnrealEd");
+		}
+
 		PublicIncludePaths.AddRange(new string[] {
 			"Exception",
 			"Exception/Boss",
@@ -31,6 +36,7 @@ public class Exception : ModuleRules
 			"Exception/Inventory",
 			"Exception/Player",
 			"Exception/Save",
+			"Exception/Story",
 			"Exception/UI",
 			"Exception/World",
 			"Exception/Variant_Platforming",

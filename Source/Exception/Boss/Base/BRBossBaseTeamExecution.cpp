@@ -74,6 +74,7 @@ bool ABRBossBase::CompleteExecution(float Damage, AActor* Executor)
 	}
 
 	bIsBeingExecuted = false;
+	LastDamageCauser = Executor;
 	const bool bApplied = StatComponent->ApplyDamageToStats(Damage, 0.0f);
 	RefreshPhaseByHP();
 

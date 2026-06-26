@@ -81,6 +81,18 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category="Exception|Inventory")
 	bool UseInventorySlot(int32 SlotIndex);
+
+	UFUNCTION(Exec, BlueprintCallable, Category="Exception|Debug")
+	void DebugCompleteNelHiddenRoute();
+
+	UFUNCTION(Exec, BlueprintCallable, Category="Exception|Debug")
+	void DebugCollectHiddenFragment();
+
+	UFUNCTION(Exec, BlueprintCallable, Category="Exception|Debug")
+	void DebugGrantMimikatzAuthoritySeized();
+
+	UFUNCTION(Exec, BlueprintCallable, Category="Exception|Debug")
+	void DebugPrintHiddenStoryState();
 	
 protected:
 
@@ -139,6 +151,8 @@ protected:
 
 	/** Gameplay initialization */
 	virtual void BeginPlay() override;
+
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	virtual void SetPawn(APawn* InPawn) override;
 

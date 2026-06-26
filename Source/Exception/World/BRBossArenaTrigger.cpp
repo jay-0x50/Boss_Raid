@@ -54,6 +54,10 @@ void ABRBossArenaTrigger::BeginPlay()
 	for (ABRBossBase* Boss : ManagedBosses)
 	{
 		BindBossEvents(Boss);
+		if (Boss)
+		{
+			Boss->PrepareForArenaInactive();
+		}
 	}
 
 	if (RewardActorToShowOnDefeat)
@@ -149,10 +153,13 @@ void ABRBossArenaTrigger::StartArena()
 		GEngine->AddOnScreenDebugMessage(4005, 4.0f, FColor::Yellow, TEXT("Boss Arena has no boss. Set Boss Actors or Boss Class To Spawn."));
 	}
 
-	if (UBRBossStatusWidget* ActiveBossStatusWidget = ShowBossStatusWidget())
+	if (!bHideBossStatusUntilIntroFinished)
 	{
-		ActiveBossStatusWidget->ClearBosses();
-		ActiveBossStatusWidget->SetBossCount(ManagedBosses.Num());
+		if (UBRBossStatusWidget* ActiveBossStatusWidget = ShowBossStatusWidget())
+		{
+			ActiveBossStatusWidget->ClearBosses();
+			ActiveBossStatusWidget->SetBossCount(ManagedBosses.Num());
+		}
 	}
 
 	for (ABRBossBase* Boss : ManagedBosses)
@@ -167,15 +174,52 @@ void ABRBossArenaTrigger::StartArena()
 			Boss->ResetBoss();
 		}
 
-		Boss->SetCombatAIEnabled(true);
+		Boss->StartBossIntro();
 	}
 
-	RefreshBossStatusWidget();
+	if (bPlayBossIntroBeforeAI && BossIntroDelay > 0.0f)
+	{
+		GetWorldTimerManager().SetTimer(BossIntroTimerHandle, this, &ABRBossArenaTrigger::ActivateManagedBossesAfterIntro, BossIntroDelay, false);
+	}
+	else
+	{
+		ActivateManagedBossesAfterIntro();
+	}
 
 	if (GEngine)
 	{
 		GEngine->AddOnScreenDebugMessage(4001, 2.0f, FColor::Red, TEXT("Boss Arena Started"));
 	}
+}
+
+void ABRBossArenaTrigger::ActivateManagedBossesAfterIntro()
+{
+	if (!bArenaStarted || bArenaCleared)
+	{
+		return;
+	}
+
+	TArray<ABRBossBase*> ManagedBosses;
+	BuildManagedBossList(ManagedBosses);
+
+	if (bHideBossStatusUntilIntroFinished)
+	{
+		if (UBRBossStatusWidget* ActiveBossStatusWidget = ShowBossStatusWidget())
+		{
+			ActiveBossStatusWidget->ClearBosses();
+			ActiveBossStatusWidget->SetBossCount(ManagedBosses.Num());
+		}
+	}
+
+	for (ABRBossBase* Boss : ManagedBosses)
+	{
+		if (Boss)
+		{
+			Boss->SetCombatAIEnabled(true);
+		}
+	}
+
+	RefreshBossStatusWidget();
 }
 
 ABRBossBase* ABRBossArenaTrigger::SpawnConfiguredBossIfNeeded()
@@ -219,6 +263,8 @@ ABRBossBase* ABRBossArenaTrigger::SpawnConfiguredBossIfNeeded()
 		SpawnedBoss->ResetBoss();
 	}
 
+	SpawnedBoss->PrepareForArenaInactive();
+
 	return SpawnedBoss;
 }
 
@@ -258,6 +304,7 @@ void ABRBossArenaTrigger::ResetArenaForRetry()
 	}
 
 	bArenaStarted = false;
+	GetWorldTimerManager().ClearTimer(BossIntroTimerHandle);
 	HideBossStatusWidget();
 
 	TArray<ABRBossBase*> ManagedBosses;
@@ -268,6 +315,7 @@ void ABRBossArenaTrigger::ResetArenaForRetry()
 		{
 			Boss->SetCombatAIEnabled(false);
 			Boss->ResetBoss();
+			Boss->PrepareForArenaInactive();
 		}
 	}
 
@@ -296,6 +344,7 @@ void ABRBossArenaTrigger::HandleBossDefeated()
 	}
 
 	bArenaCleared = true;
+	GetWorldTimerManager().ClearTimer(BossIntroTimerHandle);
 	HideBossStatusWidget();
 
 	TArray<ABRBossBase*> ManagedBosses;

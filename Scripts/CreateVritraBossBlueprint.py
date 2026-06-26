@@ -147,10 +147,9 @@ def configure_blueprint(blueprint):
     # Boss base visual settings.
     set_property_if_exists(cdo, "VisualMeshType", unreal.BRBossVisualMeshType.SKELETAL_MESH)
     set_property_if_exists(cdo, "MeshRelativeLocation", unreal.Vector(0.0, 0.0, -90.0))
-    set_property_if_exists(cdo, "MeshRelativeRotation", unreal.Rotator(0.0, -90.0, 0.0))
+    set_property_if_exists(cdo, "MeshRelativeRotation", unreal.Rotator(0.0, 0.0, 0.0))
     set_property_if_exists(cdo, "MeshRelativeScale", unreal.Vector(100.0, 100.0, 100.0))
-    set_property_if_exists(cdo, "BossCollisionRadius", 95.0)
-    set_property_if_exists(cdo, "BossCollisionHalfHeight", 130.0)
+    set_property_if_exists(cdo, "GroundTraceActorHalfHeight", 130.0)
 
     # Keep Vritra gameplay values on the blueprint CDO too, so placed/spawned BP instances are ready.
     set_property_if_exists(cdo, "InitialMaxHP", 560.0)
@@ -162,7 +161,7 @@ def configure_blueprint(blueprint):
     set_property_if_exists(cdo, "MoveSpeed", 165.0)
     set_property_if_exists(cdo, "Phase2MoveSpeedMultiplier", 1.22)
     set_property_if_exists(cdo, "Phase2CooldownMultiplier", 0.7)
-    set_property_if_exists(cdo, "RotationInterpSpeed", 2.8)
+    set_property_if_exists(cdo, "RotationInterpSpeed", 0.0)
     set_property_if_exists(cdo, "MeleeStandbyDistance", 260.0)
     set_property_if_exists(cdo, "RangedStandbyDistance", 1020.0)
     set_property_if_exists(cdo, "RangedComfortMinDistance", 620.0)

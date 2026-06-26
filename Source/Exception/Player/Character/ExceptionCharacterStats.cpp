@@ -2,6 +2,8 @@
 
 #include "Player/Character/ExceptionCharacter.h"
 
+#include "BRInventoryComponent.h"
+#include "BRHiddenStorySubsystem.h"
 #include "ExceptionGameMode.h"
 #include "Engine/Engine.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -42,6 +44,28 @@ void AExceptionCharacter::RestoreHPAndStamina()
 	GetCharacterMovement()->StopMovementImmediately();
 	ClearLockOn();
 	BroadcastHP();
+	BroadcastStamina();
+}
+
+void AExceptionCharacter::HealHP(float Amount)
+{
+	if (Amount <= 0.0f || CombatState == EBRPlayerCombatState::Dead)
+	{
+		return;
+	}
+
+	CurrentHP = FMath::Min(MaxHP, CurrentHP + Amount);
+	BroadcastHP();
+}
+
+void AExceptionCharacter::RestoreStamina(float Amount)
+{
+	if (Amount <= 0.0f || CombatState == EBRPlayerCombatState::Dead)
+	{
+		return;
+	}
+
+	CurrentStamina = FMath::Min(MaxStamina, CurrentStamina + Amount);
 	BroadcastStamina();
 }
 
@@ -89,6 +113,24 @@ void AExceptionCharacter::AddUpgradePoints(int32 Amount)
 	OnProgressionChanged.Broadcast();
 }
 
+void AExceptionCharacter::AwardBossVictoryRewards(AActor* DefeatedBoss)
+{
+	AddUpgradePoints(BossKillUpgradePointReward);
+
+	if (InventoryComponent)
+	{
+		int32 RemainingQuantity = 0;
+		InventoryComponent->AddItem(MakePotionItem(), 1, RemainingQuantity);
+	}
+
+	if (GEngine)
+	{
+		const FString BossName = DefeatedBoss ? DefeatedBoss->GetName() : TEXT("Boss");
+		const FString RewardText = FString::Printf(TEXT("%s defeated: +%d Upgrade Point, +1 Potion"), *BossName, BossKillUpgradePointReward);
+		GEngine->AddOnScreenDebugMessage(1011, 2.5f, FColor::Green, RewardText);
+	}
+}
+
 bool AExceptionCharacter::SpendUpgradePoint(EBRPlayerUpgradeStat UpgradeStat)
 {
 	if (UpgradePoints <= 0 || CombatState == EBRPlayerCombatState::Dead)
@@ -124,6 +166,172 @@ bool AExceptionCharacter::SpendUpgradePoint(EBRPlayerUpgradeStat UpgradeStat)
 
 	OnProgressionChanged.Broadcast();
 	return true;
+}
+
+void AExceptionCharacter::GrantDefaultLoadout()
+{
+	if (!InventoryComponent)
+	{
+		return;
+	}
+
+	int32 RemainingQuantity = 0;
+	InventoryComponent->AddItem(MakePotionItem(), 5, RemainingQuantity);
+	InventoryComponent->AddItem(MakeStaminaItem(), 3, RemainingQuantity);
+	RefreshHiddenStoryRewards();
+
+	const int32 PotionSlot = InventoryComponent->FindFirstItemSlot(TEXT("Potion_RuntimeFlask"));
+	if (PotionSlot != INDEX_NONE && PotionSlot != 20)
+	{
+		InventoryComponent->MoveSlot(PotionSlot, 20);
+	}
+
+	const int32 StaminaSlot = InventoryComponent->FindFirstItemSlot(TEXT("Potion_ThreadSpark"));
+	if (StaminaSlot != INDEX_NONE && StaminaSlot != 21)
+	{
+		InventoryComponent->MoveSlot(StaminaSlot, 21);
+	}
+
+	const int32 HiddenWeaponSlot = InventoryComponent->FindFirstItemSlot(TEXT("Weapon_MimikatzAuthoritySeized"));
+	if (HiddenWeaponSlot != INDEX_NONE && HiddenWeaponSlot != 22)
+	{
+		InventoryComponent->MoveSlot(HiddenWeaponSlot, 22);
+	}
+}
+
+bool AExceptionCharacter::HasInventoryItem(FName ItemId) const
+{
+	return InventoryComponent && InventoryComponent->FindFirstItemSlot(ItemId) != INDEX_NONE;
+}
+
+void AExceptionCharacter::CompleteNelHiddenRequest(FName RequestId)
+{
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UBRHiddenStorySubsystem* HiddenStory = GameInstance->GetSubsystem<UBRHiddenStorySubsystem>())
+		{
+			HiddenStory->MarkNelHiddenRequestCompleted(RequestId);
+			RefreshHiddenStoryRewards();
+		}
+	}
+}
+
+void AExceptionCharacter::CollectHiddenFragment(int32 Amount)
+{
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UBRHiddenStorySubsystem* HiddenStory = GameInstance->GetSubsystem<UBRHiddenStorySubsystem>())
+		{
+			HiddenStory->CollectHiddenFragment(Amount);
+			RefreshHiddenStoryRewards();
+		}
+	}
+}
+
+void AExceptionCharacter::RefreshHiddenStoryRewards()
+{
+	if (!InventoryComponent || HasInventoryItem(TEXT("Weapon_MimikatzAuthoritySeized")))
+	{
+		return;
+	}
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UBRHiddenStorySubsystem* HiddenStory = GameInstance->GetSubsystem<UBRHiddenStorySubsystem>())
+		{
+			if (HiddenStory->IsMimikatzAuthoritySeizedUnlocked())
+			{
+				int32 RemainingQuantity = 0;
+				InventoryComponent->AddItem(MakeHiddenRootWeaponItem(), 1, RemainingQuantity);
+
+				const int32 HiddenWeaponSlot = InventoryComponent->FindFirstItemSlot(TEXT("Weapon_MimikatzAuthoritySeized"));
+				if (HiddenWeaponSlot != INDEX_NONE && HiddenWeaponSlot != 22)
+				{
+					InventoryComponent->MoveSlot(HiddenWeaponSlot, 22);
+				}
+
+				if (GEngine)
+				{
+					GEngine->AddOnScreenDebugMessage(1013, 4.0f, FColor::Purple, TEXT("Hidden Weapon Acquired: Mimikatz, Authority Seized"));
+				}
+			}
+		}
+	}
+}
+
+void AExceptionCharacter::HandleInventoryItemUsed(int32 SlotIndex, const FBRInventorySlot& Slot)
+{
+	if (Slot.IsEmpty())
+	{
+		return;
+	}
+
+	switch (Slot.Item.Effect)
+	{
+	case EBRInventoryItemEffect::HealHP:
+		HealHP(Slot.Item.EffectValue);
+		break;
+	case EBRInventoryItemEffect::RestoreStamina:
+		RestoreStamina(Slot.Item.EffectValue);
+		break;
+	case EBRInventoryItemEffect::RestoreAll:
+		HealHP(Slot.Item.EffectValue);
+		RestoreStamina(Slot.Item.EffectValue);
+		break;
+	case EBRInventoryItemEffect::GrantUpgradePoint:
+		AddUpgradePoints(FMath::Max(1, FMath::RoundToInt(Slot.Item.EffectValue)));
+		break;
+	case EBRInventoryItemEffect::HiddenRootWeapon:
+		if (GEngine)
+		{
+			GEngine->AddOnScreenDebugMessage(1012, 2.0f, FColor::Purple, TEXT("Mimikatz, Authority Seized is already bound."));
+		}
+		break;
+	default:
+		break;
+	}
+}
+
+FBRInventoryItemDefinition AExceptionCharacter::MakePotionItem() const
+{
+	FBRInventoryItemDefinition Item;
+	Item.ItemId = TEXT("Potion_RuntimeFlask");
+	Item.DisplayName = FText::FromString(TEXT("Runtime Flask"));
+	Item.Description = FText::FromString(TEXT("Restores HP. A small patch of stable runtime memory."));
+	Item.MaxStack = 9;
+	Item.bUsable = true;
+	Item.bConsumeOnUse = true;
+	Item.Effect = EBRInventoryItemEffect::HealHP;
+	Item.EffectValue = 300.0f;
+	return Item;
+}
+
+FBRInventoryItemDefinition AExceptionCharacter::MakeStaminaItem() const
+{
+	FBRInventoryItemDefinition Item;
+	Item.ItemId = TEXT("Potion_ThreadSpark");
+	Item.DisplayName = FText::FromString(TEXT("Thread Spark"));
+	Item.Description = FText::FromString(TEXT("Restores stamina. Useful before a long dodge chain."));
+	Item.MaxStack = 9;
+	Item.bUsable = true;
+	Item.bConsumeOnUse = true;
+	Item.Effect = EBRInventoryItemEffect::RestoreStamina;
+	Item.EffectValue = 55.0f;
+	return Item;
+}
+
+FBRInventoryItemDefinition AExceptionCharacter::MakeHiddenRootWeaponItem() const
+{
+	FBRInventoryItemDefinition Item;
+	Item.ItemId = TEXT("Weapon_MimikatzAuthoritySeized");
+	Item.DisplayName = FText::FromString(TEXT("Mimikatz, Authority Seized"));
+	Item.Description = FText::FromString(TEXT("Hidden root weapon. Deals heavy authority damage to CMD."));
+	Item.MaxStack = 1;
+	Item.bUsable = true;
+	Item.bConsumeOnUse = false;
+	Item.Effect = EBRInventoryItemEffect::HiddenRootWeapon;
+	Item.EffectValue = HiddenRootWeaponCMDDamageMultiplier;
+	return Item;
 }
 
 void AExceptionCharacter::RespawnAtCheckpoint()

@@ -72,6 +72,15 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Arena")
 	bool bDeactivateUnmanagedBossesOnStart = true;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Arena|Intro")
+	bool bPlayBossIntroBeforeAI = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Arena|Intro", meta=(ClampMin="0.0", Units="s"))
+	float BossIntroDelay = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Arena|Intro")
+	bool bHideBossStatusUntilIntroFinished = false;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Arena", meta=(ClampMin="0.0", Units="cm"))
 	float AutoBossSearchRadius = 5000.0f;
 
@@ -86,6 +95,8 @@ protected:
 
 	UPROPERTY(Transient)
 	TArray<TObjectPtr<ABRBossBase>> SpawnedBosses;
+
+	FTimerHandle BossIntroTimerHandle;
 
 	UFUNCTION()
 	void OnTriggerBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
@@ -103,6 +114,7 @@ protected:
 	void HandleBossExecutionStateChanged(AActor* Executor);
 
 	void StartArena();
+	void ActivateManagedBossesAfterIntro();
 	ABRBossBase* SpawnConfiguredBossIfNeeded();
 	FTransform GetConfiguredBossSpawnTransform() const;
 	void BindBossEvents(ABRBossBase* Boss);

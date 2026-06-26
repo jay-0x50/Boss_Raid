@@ -115,10 +115,19 @@ void UBRPlayerHUDWidget::BuildHUDWidget()
 	}
 
 	UTextBlock* ShortcutTitle = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("ShortcutTitle"));
-	ShortcutTitle->SetText(FText::FromString(TEXT("SHORTCUT")));
+	ShortcutTitle->SetText(FText::FromString(TEXT("SHORTCUT / INVENTORY")));
 	ShortcutTitle->SetColorAndOpacity(FSlateColor(FLinearColor(0.78f, 0.72f, 0.62f, 1.0f)));
 	ShortcutTitle->SetFont(FSlateFontInfo(FCoreStyle::GetDefaultFont(), 14));
 	ShortcutBox->AddChildToVerticalBox(ShortcutTitle);
+
+	UTextBlock* MenuHintText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("MenuHintText"));
+	MenuHintText->SetText(FText::FromString(TEXT("[I] Inventory   [ESC] Settings")));
+	MenuHintText->SetColorAndOpacity(FSlateColor(FLinearColor(0.9f, 0.86f, 0.76f, 1.0f)));
+	MenuHintText->SetFont(FSlateFontInfo(FCoreStyle::GetDefaultFont(), 12));
+	if (UVerticalBoxSlot* HintSlot = ShortcutBox->AddChildToVerticalBox(MenuHintText))
+	{
+		HintSlot->SetPadding(FMargin(0.0f, 4.0f, 0.0f, 0.0f));
+	}
 
 	UHorizontalBox* HotbarBox = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("HotbarBox"));
 	if (UVerticalBoxSlot* HotbarBoxSlot = ShortcutBox->AddChildToVerticalBox(HotbarBox))

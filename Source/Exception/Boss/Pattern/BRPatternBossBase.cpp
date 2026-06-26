@@ -96,6 +96,7 @@ void ABRPatternBossBase::OnBossGroggyInternal()
 	bIsAttacking = false;
 	ActivePatternIndex = INDEX_NONE;
 	NotifyCoordinatedAttackFinished();
+	NotifyBossAnimationStage(EBRBossAnimationStage::Idle);
 }
 
 void ABRPatternBossBase::OnBossRecoveredFromGroggyInternal()

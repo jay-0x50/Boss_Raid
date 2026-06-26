@@ -3,6 +3,7 @@
 #include "Boss/AI/BRBossAIController.h"
 #include "BRStatComponent.h"
 #include "Engine/Engine.h"
+#include "Player/Character/ExceptionCharacter.h"
 
 float ABRBossBase::TakeDamage(float Damage, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
@@ -23,6 +24,7 @@ bool ABRBossBase::ReceiveCombatHit_Implementation(float Damage, float GroggyDama
 		return false;
 	}
 
+	LastDamageCauser = DamageCauser;
 	RefreshPhaseByHP();
 
 	UE_LOG(LogTemp, Log, TEXT("%s hit: Damage=%.1f, GroggyDamage=%.1f, HP=%.1f/%.1f, Groggy=%.1f/%.1f"),
@@ -45,10 +47,17 @@ bool ABRBossBase::ReceiveCombatHit_Implementation(float Damage, float GroggyDama
 
 void ABRBossBase::ResetBoss()
 {
+	if (bResetTransformOnBossReset)
+	{
+		SetActorTransform(InitialBossTransform, false, nullptr, ETeleportType::TeleportPhysics);
+	}
+
 	bIsDead = false;
 	bIsGroggy = false;
 	bIsAttacking = false;
 	bIsBeingExecuted = false;
+	LastDamageCauser = nullptr;
+	VerticalFallSpeed = 0.0f;
 	BossPhase = EBRBossPhase::Phase1;
 	ClearBaseTimers();
 
@@ -59,6 +68,7 @@ void ABRBossBase::ResetBoss()
 
 	SetActorHiddenInGame(false);
 	SetActorEnableCollision(true);
+	SetBossAnimationPlaying(bCombatAIEnabled && !bIsDead);
 
 	OnBossReset();
 }
@@ -67,6 +77,9 @@ void ABRBossBase::SetCombatAIEnabled(bool bEnabled)
 {
 	bCombatAIEnabled = bEnabled;
 	bIsAttacking = false;
+	SetBossAnimationPlaying(bCombatAIEnabled && !bIsDead);
+	SetActorEnableCollision(!bDisableCollisionWhenInactive || bCombatAIEnabled);
+	NotifyBossAnimationStage(EBRBossAnimationStage::Idle);
 
 	if (ABRBossAIController* BossAIController = GetBossAIController())
 	{
@@ -81,6 +94,33 @@ void ABRBossBase::SetCombatAIEnabled(bool bEnabled)
 			bCombatAIEnabled ? FColor::Red : FColor::Silver,
 			bCombatAIEnabled ? TEXT("Boss AI Enabled") : TEXT("Boss AI Disabled"));
 	}
+}
+
+void ABRBossBase::PrepareForArenaInactive()
+{
+	bCombatAIEnabled = false;
+	bIsAttacking = false;
+	bIsBeingExecuted = false;
+	VerticalFallSpeed = 0.0f;
+
+	SetBossAnimationPlaying(false);
+	NotifyBossAnimationStage(EBRBossAnimationStage::Idle);
+	SetActorHiddenInGame(!bShowBossWhenInactive);
+	SetActorEnableCollision(!bDisableCollisionWhenInactive);
+
+	if (ABRBossAIController* BossAIController = GetBossAIController())
+	{
+		BossAIController->SetBossAIEnabled(false);
+	}
+}
+
+void ABRBossBase::StartBossIntro()
+{
+	SetActorHiddenInGame(false);
+	SetActorEnableCollision(!bDisableCollisionWhenInactive);
+	SetBossAnimationPlaying(true);
+	NotifyBossAnimationStage(EBRBossAnimationStage::Intro);
+	BP_BossIntroStarted();
 }
 
 float ABRBossBase::GetMaxHP() const
@@ -156,8 +196,15 @@ void ABRBossBase::HandleDead()
 	ClearBaseTimers();
 	NotifyCoordinatedAttackFinished();
 	SetActorEnableCollision(false);
+	SetBossAnimationPlaying(false);
+	NotifyBossAnimationStage(EBRBossAnimationStage::Death);
 	OnBossDead.Broadcast();
 	OnBossDeadInternal();
+
+	if (AExceptionCharacter* RewardCharacter = Cast<AExceptionCharacter>(LastDamageCauser))
+	{
+		RewardCharacter->AwardBossVictoryRewards(this);
+	}
 
 	if (GEngine)
 	{
@@ -170,6 +217,7 @@ void ABRBossBase::HandleGroggy()
 	bIsGroggy = true;
 	bIsAttacking = false;
 	ClearBaseTimers();
+	NotifyBossAnimationStage(EBRBossAnimationStage::Groggy);
 	OnBossGroggy.Broadcast();
 	OnBossGroggyInternal();
 	GetWorldTimerManager().SetTimer(GroggyTimerHandle, this, &ABRBossBase::RecoverFromGroggy, GroggyDuration, false);
@@ -204,6 +252,7 @@ void ABRBossBase::RecoverFromGroggy()
 	}
 
 	bIsGroggy = false;
+	NotifyBossAnimationStage(EBRBossAnimationStage::Idle);
 
 	if (StatComponent)
 	{

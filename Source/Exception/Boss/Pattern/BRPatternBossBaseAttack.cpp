@@ -63,6 +63,7 @@ void ABRPatternBossBase::StartBossAttack(int32 PatternIndex)
 
 	const FBRBossPatternData& Pattern = AttackPatterns[ActivePatternIndex];
 	OnPatternStarted.Broadcast(Pattern.PatternName);
+	NotifyBossAnimationStage(EBRBossAnimationStage::PatternWindup, Pattern.AnimationActionName.IsNone() ? Pattern.PatternName : Pattern.AnimationActionName);
 	if (GEngine)
 	{
 		const FString Message = FString::Printf(TEXT("WARNING: %s"), *Pattern.PatternName.ToString());
@@ -85,6 +86,8 @@ void ABRPatternBossBase::PerformBossAttack()
 
 	const FBRBossPatternData Pattern = AttackPatterns[ActivePatternIndex];
 	ActivePatternIndex = INDEX_NONE;
+	const FName AnimationActionName = Pattern.AnimationActionName.IsNone() ? Pattern.PatternName : Pattern.AnimationActionName;
+	NotifyBossAnimationStage(EBRBossAnimationStage::PatternImpact, AnimationActionName);
 
 	if (Pattern.PatternType == EBRBossPatternType::Dash)
 	{
@@ -131,6 +134,7 @@ void ABRPatternBossBase::PerformBossAttack()
 
 	if (!bHitTarget)
 	{
+		NotifyBossAnimationStage(EBRBossAnimationStage::PatternRecovery, AnimationActionName);
 		OnPatternFinished.Broadcast(Pattern.PatternName);
 		NotifyCoordinatedAttackFinished();
 		return;
@@ -138,6 +142,7 @@ void ABRPatternBossBase::PerformBossAttack()
 
 	UGameplayStatics::ApplyDamage(CurrentTarget, Pattern.Damage, nullptr, this, UDamageType::StaticClass());
 	OnPatternHit.Broadcast(Pattern.PatternName);
+	NotifyBossAnimationStage(EBRBossAnimationStage::PatternRecovery, AnimationActionName);
 	OnPatternFinished.Broadcast(Pattern.PatternName);
 	NotifyCoordinatedAttackFinished();
 

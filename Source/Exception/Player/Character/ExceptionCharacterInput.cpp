@@ -112,6 +112,11 @@ void AExceptionCharacter::BossPlate2Pressed()
 	ActivateBossPlateByIndex(2);
 }
 
+void AExceptionCharacter::BossPlate3Pressed()
+{
+	ActivateBossPlateByIndex(3);
+}
+
 void AExceptionCharacter::ActivateBossPlateByIndex(int32 PlateIndex)
 {
 	ABRBossActivationPlate::ActivatePlateByIndex(this, PlateIndex, this);
@@ -194,6 +199,12 @@ void AExceptionCharacter::SetupRuntimeCombatInput(UEnhancedInputComponent* Enhan
 	RuntimeBossPlate2Action->ValueType = EInputActionValueType::Boolean;
 	RuntimeCombatMappingContext->MapKey(RuntimeBossPlate2Action, EKeys::Two);
 	EnhancedInputComponent->BindAction(RuntimeBossPlate2Action, ETriggerEvent::Started, this, &AExceptionCharacter::BossPlate2Pressed);
+	bNeedsRuntimeMapping = true;
+
+	RuntimeBossPlate3Action = NewObject<UInputAction>(this, TEXT("IA_RuntimeBossPlate3"));
+	RuntimeBossPlate3Action->ValueType = EInputActionValueType::Boolean;
+	RuntimeCombatMappingContext->MapKey(RuntimeBossPlate3Action, EKeys::Three);
+	EnhancedInputComponent->BindAction(RuntimeBossPlate3Action, ETriggerEvent::Started, this, &AExceptionCharacter::BossPlate3Pressed);
 	bNeedsRuntimeMapping = true;
 
 	if (bNeedsRuntimeMapping)

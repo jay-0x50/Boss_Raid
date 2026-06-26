@@ -4,8 +4,13 @@
 #include "Player/Character/ExceptionCharacter.h"
 #include "ExceptionGameMode.h"
 #include "Blueprint/UserWidget.h"
+#include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
+
+#if WITH_EDITOR
+#include "Editor.h"
+#endif
 
 UUserWidget* AExceptionPlayerController::ShowTitleMenuWidget()
 {
@@ -130,5 +135,21 @@ void AExceptionPlayerController::ReturnToTitle()
 
 void AExceptionPlayerController::QuitGame()
 {
+	if (const UWorld* World = GetWorld())
+	{
+		if (World->WorldType == EWorldType::PIE)
+		{
+#if WITH_EDITOR
+			if (GEditor)
+			{
+				GEditor->RequestEndPlayMap();
+				return;
+			}
+#endif
+
+			return;
+		}
+	}
+
 	UKismetSystemLibrary::QuitGame(this, this, EQuitPreference::Quit, false);
 }

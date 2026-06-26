@@ -2,6 +2,7 @@
 
 #include "BRSaveGame.h"
 #include "BRInventoryComponent.h"
+#include "BRHiddenStorySubsystem.h"
 #include "Player/Character/ExceptionCharacter.h"
 #include "ExceptionGameMode.h"
 #include "Kismet/GameplayStatics.h"
@@ -46,6 +47,19 @@ bool UBRSaveGameSubsystem::SaveCurrentGame(const FString& SlotName, int32 UserIn
 		{
 			SaveGame->CheckpointTransform = ExceptionGameMode->GetCheckpointTransform();
 			SaveGame->CheckpointTransform.SetScale3D(FVector::OneVector);
+		}
+	}
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UBRHiddenStorySubsystem* HiddenStory = GameInstance->GetSubsystem<UBRHiddenStorySubsystem>())
+		{
+			SaveGame->RegisteredNelRequests = HiddenStory->GetRegisteredNelRequestIds();
+			SaveGame->CompletedNelRequests = HiddenStory->GetCompletedNelRequestIds();
+			SaveGame->HiddenFragmentCount = HiddenStory->GetHiddenFragmentCount();
+			SaveGame->bMimikatzAuthoritySeizedUnlocked = HiddenStory->IsMimikatzAuthoritySeizedUnlocked();
+			SaveGame->bHiddenEndingEligible = HiddenStory->IsHiddenEndingEligible();
+			SaveGame->LastResolvedEnding = HiddenStory->GetLastResolvedEnding();
 		}
 	}
 
@@ -107,6 +121,21 @@ bool UBRSaveGameSubsystem::ApplyPendingLoadedGame()
 	if (UBRInventoryComponent* InventoryComponent = PlayerCharacter->GetInventoryComponent())
 	{
 		InventoryComponent->SetSlots(PendingSaveGame->InventorySlots);
+	}
+
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UBRHiddenStorySubsystem* HiddenStory = GameInstance->GetSubsystem<UBRHiddenStorySubsystem>())
+		{
+			HiddenStory->ApplySavedHiddenStoryState(
+				PendingSaveGame->RegisteredNelRequests,
+				PendingSaveGame->CompletedNelRequests,
+				PendingSaveGame->HiddenFragmentCount,
+				PendingSaveGame->bMimikatzAuthoritySeizedUnlocked,
+				PendingSaveGame->bHiddenEndingEligible,
+				PendingSaveGame->LastResolvedEnding);
+			PlayerCharacter->RefreshHiddenStoryRewards();
+		}
 	}
 
 	if (AController* Controller = PlayerCharacter->GetController())

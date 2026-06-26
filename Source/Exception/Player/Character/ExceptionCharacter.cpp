@@ -73,6 +73,12 @@ void AExceptionCharacter::BeginPlay()
 {
 	Super::BeginPlay();
 
+	if (InventoryComponent)
+	{
+		InventoryComponent->OnItemUsed.AddUniqueDynamic(this, &AExceptionCharacter::HandleInventoryItemUsed);
+	}
+
 	RestoreHPAndStamina();
+	GrantDefaultLoadout();
 	RegisterInitialCheckpoint();
 }

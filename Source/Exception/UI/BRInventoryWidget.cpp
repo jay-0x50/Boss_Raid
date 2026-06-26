@@ -2,8 +2,10 @@
 
 #include "BRInventoryComponent.h"
 #include "BRInventorySlotWidget.h"
+#include "Player/Controller/ExceptionPlayerController.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
+#include "Components/Button.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/HorizontalBox.h"
@@ -61,6 +63,14 @@ void UBRInventoryWidget::RefreshInventory()
 	SetInventorySlots(InventoryComponent->GetSlots());
 }
 
+void UBRInventoryWidget::HandleCloseClicked()
+{
+	if (AExceptionPlayerController* ExceptionPC = Cast<AExceptionPlayerController>(GetOwningPlayer()))
+	{
+		ExceptionPC->HideInventoryWidget();
+	}
+}
+
 void UBRInventoryWidget::BuildInventoryWidget()
 {
 	if (!WidgetTree || WidgetTree->RootWidget)
@@ -85,13 +95,45 @@ void UBRInventoryWidget::BuildInventoryWidget()
 	UVerticalBox* MainBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("MainBox"));
 	MainBorder->SetContent(MainBox);
 
+	UHorizontalBox* HeaderBox = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("HeaderBox"));
+	if (UVerticalBoxSlot* HeaderSlot = MainBox->AddChildToVerticalBox(HeaderBox))
+	{
+		HeaderSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 14.0f));
+	}
+
 	UTextBlock* TitleText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("TitleText"));
 	TitleText->SetText(FText::FromString(TEXT("INVENTORY")));
 	TitleText->SetColorAndOpacity(FSlateColor(FLinearColor(0.0f, 1.0f, 1.0f, 1.0f)));
 	TitleText->SetFont(FSlateFontInfo(FCoreStyle::GetDefaultFont(), 34));
-	if (UVerticalBoxSlot* TitleSlot = MainBox->AddChildToVerticalBox(TitleText))
+	if (UHorizontalBoxSlot* TitleSlot = HeaderBox->AddChildToHorizontalBox(TitleText))
 	{
-		TitleSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 14.0f));
+		TitleSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+	}
+
+	UButton* CloseButton = WidgetTree->ConstructWidget<UButton>(UButton::StaticClass(), TEXT("CloseButton"));
+	CloseButton->SetBackgroundColor(FLinearColor(0.22f, 0.2f, 0.16f, 0.9f));
+	CloseButton->OnClicked.AddUniqueDynamic(this, &UBRInventoryWidget::HandleCloseClicked);
+	if (UHorizontalBoxSlot* CloseSlot = HeaderBox->AddChildToHorizontalBox(CloseButton))
+	{
+		CloseSlot->SetSize(FSlateChildSize(ESlateSizeRule::Automatic));
+		CloseSlot->SetHorizontalAlignment(HAlign_Right);
+		CloseSlot->SetVerticalAlignment(VAlign_Center);
+	}
+
+	UTextBlock* CloseText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("CloseText"));
+	CloseText->SetText(FText::FromString(TEXT("Close")));
+	CloseText->SetJustification(ETextJustify::Center);
+	CloseText->SetColorAndOpacity(FSlateColor(FLinearColor(0.9f, 0.86f, 0.76f, 1.0f)));
+	CloseText->SetFont(FSlateFontInfo(FCoreStyle::GetDefaultFont(), 15));
+	CloseButton->AddChild(CloseText);
+
+	UTextBlock* HintText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("InventoryHintText"));
+	HintText->SetText(FText::FromString(TEXT("Click item slots to use consumables. Hotbar slots: Q / E / R")));
+	HintText->SetColorAndOpacity(FSlateColor(FLinearColor(0.75f, 1.0f, 1.0f, 1.0f)));
+	HintText->SetFont(FSlateFontInfo(FCoreStyle::GetDefaultFont(), 12));
+	if (UVerticalBoxSlot* HintSlot = MainBox->AddChildToVerticalBox(HintText))
+	{
+		HintSlot->SetPadding(FMargin(0.0f, 0.0f, 0.0f, 12.0f));
 	}
 
 	UHorizontalBox* BodyBox = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass(), TEXT("BodyBox"));
@@ -216,9 +258,37 @@ void UBRInventoryWidget::UpdateDetailsPanel(const FBRInventorySlot& InventorySlo
 
 	const FText ItemName = InventorySlot.Item.DisplayName.IsEmpty() ? FText::FromName(InventorySlot.Item.ItemId) : InventorySlot.Item.DisplayName;
 	ItemNameText->SetText(FText::FromString(FString::Printf(TEXT("ITEM: %s"), *ItemName.ToString())));
-	ItemTypeText->SetText(InventorySlot.Item.bUsable ? FText::FromString(TEXT("TYPE: CONSUMABLE")) : FText::FromString(TEXT("TYPE: KEY ITEM")));
-	ItemEffectText->SetText(InventorySlot.Item.bUsable
-		? FText::FromString(TEXT("EFFECT:\nExecutes item use logic."))
-		: FText::FromString(TEXT("EFFECT:\nPassive inventory item.")));
+
+	FString TypeText = InventorySlot.Item.bUsable ? TEXT("TYPE: USABLE") : TEXT("TYPE: KEY ITEM");
+	FString EffectText = TEXT("EFFECT:\nPassive inventory item.");
+
+	switch (InventorySlot.Item.Effect)
+	{
+	case EBRInventoryItemEffect::HealHP:
+		TypeText = TEXT("TYPE: CONSUMABLE");
+		EffectText = FString::Printf(TEXT("EFFECT:\nRestores %.0f HP."), InventorySlot.Item.EffectValue);
+		break;
+	case EBRInventoryItemEffect::RestoreStamina:
+		TypeText = TEXT("TYPE: CONSUMABLE");
+		EffectText = FString::Printf(TEXT("EFFECT:\nRestores %.0f stamina."), InventorySlot.Item.EffectValue);
+		break;
+	case EBRInventoryItemEffect::RestoreAll:
+		TypeText = TEXT("TYPE: CONSUMABLE");
+		EffectText = FString::Printf(TEXT("EFFECT:\nRestores %.0f HP and stamina."), InventorySlot.Item.EffectValue);
+		break;
+	case EBRInventoryItemEffect::GrantUpgradePoint:
+		TypeText = TEXT("TYPE: RUNE MEMORY");
+		EffectText = FString::Printf(TEXT("EFFECT:\nGrants %.0f upgrade point."), InventorySlot.Item.EffectValue);
+		break;
+	case EBRInventoryItemEffect::HiddenRootWeapon:
+		TypeText = TEXT("TYPE: HIDDEN WEAPON");
+		EffectText = FString::Printf(TEXT("EFFECT:\nAuthority damage against CMD x%.1f."), InventorySlot.Item.EffectValue);
+		break;
+	default:
+		break;
+	}
+
+	ItemTypeText->SetText(FText::FromString(TypeText));
+	ItemEffectText->SetText(FText::FromString(EffectText));
 	ItemDescriptionText->SetText(FText::FromString(FString::Printf(TEXT("DESCRIPTION:\n%s"), *InventorySlot.Item.Description.ToString())));
 }

@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "GameFramework/SaveGame.h"
 #include "BRInventoryTypes.h"
+#include "BRHiddenStorySubsystem.h"
 #include "BRSaveGame.generated.h"
 
 UCLASS(BlueprintType)
@@ -52,4 +53,22 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Save")
 	TArray<FBRInventorySlot> InventorySlots;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Save")
+	TArray<FName> RegisteredNelRequests;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Save")
+	TArray<FName> CompletedNelRequests;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Save")
+	int32 HiddenFragmentCount = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Save")
+	bool bMimikatzAuthoritySeizedUnlocked = false;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Save")
+	bool bHiddenEndingEligible = false;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Save")
+	EBRRuntimeEnding LastResolvedEnding = EBRRuntimeEnding::None;
 };

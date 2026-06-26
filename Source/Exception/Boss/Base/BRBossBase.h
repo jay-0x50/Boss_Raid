@@ -8,7 +8,6 @@
 class ABRBossAIController;
 class UBRStatComponent;
 class UBehaviorTree;
-class UCapsuleComponent;
 class USceneComponent;
 class UStaticMeshComponent;
 class USkeletalMeshComponent;
@@ -37,10 +36,24 @@ enum class EBRBossTeamRole : uint8
 	Support
 };
 
+UENUM(BlueprintType)
+enum class EBRBossAnimationStage : uint8
+{
+	Idle,
+	Intro,
+	Move,
+	PatternWindup,
+	PatternImpact,
+	PatternRecovery,
+	Groggy,
+	Death
+};
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FBRBossStateEvent);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FBRBossStatChanged, float, CurrentValue, float, MaxValue, float, NormalizedValue);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FBRBossExecutionEvent, AActor*, Executor);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FBRBossPhaseChanged, EBRBossPhase, NewPhase);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBRBossAnimationStageEvent, EBRBossAnimationStage, Stage, FName, ActionName);
 
 UCLASS(Abstract, Blueprintable, BlueprintType)
 class EXCEPTION_API ABRBossBase : public APawn, public IBRCombatInterface
@@ -59,6 +72,12 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category="Exception|AI")
 	virtual void SetCombatAIEnabled(bool bEnabled);
+
+	UFUNCTION(BlueprintCallable, Category="Exception|Boss")
+	void PrepareForArenaInactive();
+
+	UFUNCTION(BlueprintCallable, Category="Exception|Boss")
+	void StartBossIntro();
 
 	UFUNCTION(BlueprintPure, Category="Exception|Boss")
 	bool IsDead() const { return bIsDead; }
@@ -162,6 +181,9 @@ public:
 	UPROPERTY(BlueprintAssignable, Category="Exception|Events")
 	FBRBossPhaseChanged OnPhaseChanged;
 
+	UPROPERTY(BlueprintAssignable, Category="Exception|Events")
+	FBRBossAnimationStageEvent OnAnimationStageChanged;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -175,8 +197,11 @@ protected:
 	virtual void DrawBossDebug() const;
 	virtual FString GetBossDebugName() const;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
-	TObjectPtr<UCapsuleComponent> BossCollision;
+	UFUNCTION(BlueprintImplementableEvent, Category="Exception|Boss")
+	void BP_BossIntroStarted();
+
+	UFUNCTION(BlueprintImplementableEvent, Category="Exception|Animation")
+	void BP_BossAnimationStageChanged(EBRBossAnimationStage Stage, FName ActionName);
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
 	TObjectPtr<USceneComponent> SceneRoot;
@@ -205,11 +230,20 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Visual", meta=(ClampMin="0.01"))
 	FVector MeshRelativeScale = FVector::OneVector;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Collision", meta=(ClampMin="1.0", Units="cm"))
-	float BossCollisionRadius = 120.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Movement")
+	bool bUseGroundGravity = true;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Collision", meta=(ClampMin="1.0", Units="cm"))
-	float BossCollisionHalfHeight = 160.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Movement", meta=(ClampMin="0.0", Units="cm"))
+	float GroundTraceActorHalfHeight = 160.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Movement", meta=(ClampMin="0.0", Units="cm/s^2"))
+	float GroundGravity = 2400.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Movement", meta=(ClampMin="0.0", Units="cm"))
+	float GroundTraceDistance = 5000.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Movement", meta=(ClampMin="0.0", Units="cm"))
+	float GroundSnapTolerance = 4.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Stats", meta=(ClampMin="1.0"))
 	float InitialMaxHP = 300.0f;
@@ -228,6 +262,15 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|AI")
 	bool bCombatAIEnabled = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Arena")
+	bool bDisableCollisionWhenInactive = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Arena")
+	bool bShowBossWhenInactive = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Arena")
+	bool bResetTransformOnBossReset = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|AI")
 	bool bRunBehaviorTreeWhenAssigned = true;
@@ -262,6 +305,13 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<AActor> CurrentTarget;
 
+	UPROPERTY(Transient)
+	TObjectPtr<AActor> LastDamageCauser;
+
+	float VerticalFallSpeed = 0.0f;
+
+	FTransform InitialBossTransform = FTransform::Identity;
+
 	FTimerHandle GroggyTimerHandle;
 
 	UFUNCTION()
@@ -278,8 +328,10 @@ protected:
 
 	void RecoverFromGroggy();
 	void RefreshPhaseByHP();
-	void ApplyBossCollisionSettings();
 	void ApplyMeshVisualTransform();
+	void SetBossAnimationPlaying(bool bShouldPlay);
+	void ApplyGroundGravity(float DeltaSeconds);
+	void NotifyBossAnimationStage(EBRBossAnimationStage Stage, FName ActionName = NAME_None);
 	bool CanStartCoordinatedAttack() const;
 	bool NotifyCoordinatedAttackStarted();
 	void NotifyCoordinatedAttackFinished();

@@ -35,6 +35,9 @@ private:
 	void HandleSaveClicked();
 
 	UFUNCTION()
+	void HandleInventoryClicked();
+
+	UFUNCTION()
 	void HandleTitleClicked();
 
 	UFUNCTION()
@@ -48,6 +51,9 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<UTextBlock> PointsText;
+
+	UPROPERTY()
+	TObjectPtr<UTextBlock> StatusText;
 
 	UPROPERTY()
 	TObjectPtr<UTextBlock> VitalityText;

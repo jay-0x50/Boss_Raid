@@ -19,8 +19,33 @@
 1. [Exception 게임 기획서](00_프로젝트_개요/Exception_게임_기획서.md)
 2. [보스 콘셉트 시트](03_보스/보스_콘셉트_시트.md)
 3. [Vritra 보스 패턴 시트](03_보스/보스_패턴_시트_Vritra.md)
-4. [전투 시스템 상세](01_전투_시스템/전투_시스템_상세.md)
-5. [Unreal C++ 구현 체크리스트](05_기술_구현/Unreal_CPP_구현_체크리스트.md)
+4. [CMD 보스 패턴 시트](03_보스/보스_패턴_시트_CMD.md)
+5. [세계관 & 스토리 기획](07_게임_스토리/Exception_스토리_아크_1편.md)
+6. [전투 시스템 상세](01_전투_시스템/전투_시스템_상세.md)
+7. [Unreal C++ 구현 체크리스트](05_기술_구현/Unreal_CPP_구현_체크리스트.md)
+
+## 현재 확정 사항
+
+- 메인 흐름은 **필드 -> Python 듀얼 보스 -> 필드 -> Perl 보스 Vritra -> 필드 -> CMD 최종 보스** 순서로 정리했다.
+- 주인공은 **Hendel**이며, 이름 의미는 예외를 처리하는 `handler`다.
+- 조력자는 **Nel(null)** 이다. 별도 퀘스트 UI 없이 대사로 부탁을 흘리고, 플레이어가 알아차려 들어주면 히든 루트 조건이 쌓인다.
+- 최종보스는 **CMD, The First Command** 다. `NULL`은 최종보스명이 아니라 Nel/null 콘셉트와 프로그래밍 개념으로만 사용한다.
+- 기본 엔딩은 CMD 처치 후 Runtime이 안정화되는 단순 클리어 루트다.
+- 히든 엔딩은 Nel의 숨은 부탁과 로그 파편을 모두 처리했을 때 열린다. Hendel은 자신이 CMD를 처리하기 위한 `handler` 도구이며 task 종료 후 무로 돌아가야 한다는 진실을 듣고, 소멸을 거부한다.
+- CMD는 아직 완전한 `root authority`를 얻지 못했고, 보스들을 깨워 Runtime을 불안정하게 만든 뒤 root 권한을 탈취하려 한다.
+- 히든 무기는 **Mimikatz, Authority Seized** 다. CMD를 이 무기로 처형하면 CMD가 거의 얻어낸 `root authority`를 Hendel이 선점해 새로운 root가 된다.
+- 히든 엔딩 이후 Runtime은 평화로워지지만, CMD가 죽기 직전 handler로 위장한 바이러스를 생성한다. 이 위장 바이러스는 평화로운 세계를 오염된 Runtime으로 착각하고 Hendel을 추적하는 2편 떡밥으로 이어진다.
+- 기존 SQL 보스 **Selvara**는 삭제하지 않고 확장 후보/보류 보스로 남긴다.
+
+## 구현/연결 진행 상황
+
+- Perl 보스 **Vritra** C++ 클래스와 패턴 데이터를 추가했다.
+- Perl 폴더의 Skeletal Mesh/Animation/Material을 사용하는 `BP_VritraBoss`를 생성했다.
+- Vritra의 보스 스케일, 방향, 충돌 캡슐, 접근/이동 로직을 조정했다.
+- 보스 아레나 트리거는 보스별로 개별 활성화되도록 수정했다.
+- `BRBossActivationPlate`를 추가해 1번/2번 보스 발판 분리 활성화 구조를 준비했다.
+- UE 5.8 빌드 설정은 `BuildSettingsVersion.V7`로 업데이트했다.
+- `ExceptionEditor Win64 Development` 전체 빌드는 성공 확인했다.
 
 ## MVP 기준
 

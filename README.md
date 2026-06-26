@@ -2,7 +2,7 @@
 
 Unreal Engine 5.8 기반의 보스 레이드 액션 RPG 데모입니다.
 
-플레이어는 붕괴된 Runtime 내부로 진입한 처리자이며, 폭주한 예외 개체를 보스전으로 제압합니다. 현재 메인 흐름은 **필드 → Python 듀얼 보스(Vethara + Aurathos) → 필드 → Perl 보스(Vritra) → 필드 → CMD 최종 보스(NULL)** 구조입니다.
+플레이어 **Hendel**은 예외를 처리하는 `handler`에서 이름을 얻은 처리자이며, 조력자 **Nel(null)** 의 안내를 받으며 CMD가 깨운 보스들을 제압합니다. 현재 메인 흐름은 **필드 → Python 듀얼 보스(Vethara + Aurathos) → 필드 → Perl 보스(Vritra) → 필드 → CMD 최종 보스** 구조입니다.
 
 ## 핵심 방향
 
@@ -25,9 +25,11 @@ Unreal Engine 5.8 기반의 보스 레이드 액션 RPG 데모입니다.
 → 필드 복귀 / 다음 구역 개방
 → Perl 보스 Vritra
 → 필드 복귀 / CMD 구역 진입
-→ 최종 보스 NULL
+→ 최종 보스 CMD
 → 엔딩 로그
 ```
+
+엔딩은 두 갈래입니다. 기본 엔딩은 CMD 처치 후 Runtime 안정화로 끝납니다. 히든 엔딩은 별도 퀘스트 UI 없이 Nel이 대사로 흘리듯 부탁한 일들을 플레이어가 알아차려 전부 해줬을 때만 열리며, 하지 않아도 메인 진행에는 지장이 없습니다. 이 루트에서 Hendel은 히든 무기 **Mimikatz, Authority Seized**로 CMD가 거의 얻어낸 root authority를 선점하고, 소멸을 거부한 채 새로운 root로 남습니다. CMD는 죽기 직전 handler로 위장한 바이러스를 남겨 2편 떡밥을 만든다.
 
 패배 시에는 체크포인트에서 리스폰하며, 보스전 상태는 다시 도전 가능한 상태로 초기화됩니다.
 
@@ -46,7 +48,7 @@ Unreal Engine 5.8 기반의 보스 레이드 액션 RPG 데모입니다.
   - `Vritra, Perl Nomad`
 - CMD 최종 보스방 1개
 - CMD 최종 보스 1체
-  - `NULL, The First Command`
+  - `CMD, The First Command`
 - 보류 / 확장 보스
   - `Selvara, Abyssal Database`
 - 플레이어 액션
@@ -297,7 +299,7 @@ Unreal 프로젝트 특성상 자동 생성 파일과 캐시 파일은 Git에서
 2. Python 듀얼 보스 패턴 밸런싱
 3. Vritra 블루프린트 메시/애니메이션/스케일 조정
 4. Vritra 보스방 트리거와 체력바 최종 확인
-5. NULL 최종 보스 기획/패턴 클래스 추가
+5. CMD 최종 보스 기획/패턴 클래스 추가
 6. 아이템 효과 및 보스 보상 연결
 7. BGM / SFX 적용
 8. 보스 처치 후 보상 및 다음 구역 개방 처리

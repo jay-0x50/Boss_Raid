@@ -109,7 +109,7 @@ UUserWidget* AExceptionPlayerController::ShowInventoryWidget()
 
 	if (InventoryWidget && !InventoryWidget->IsInViewport())
 	{
-		InventoryWidget->AddToPlayerScreen(40);
+		InventoryWidget->AddToPlayerScreen(IsPauseMenuOpen() ? 70 : 40);
 	}
 
 	bShowMouseCursor = true;
@@ -206,6 +206,7 @@ void AExceptionPlayerController::BindInventoryWidgetToPawn()
 	UBRInventoryComponent* InventoryComponent = GetPlayerInventoryComponent();
 	if (!InventoryComponent || BoundInventoryComponent == InventoryComponent)
 	{
+		PushInventoryToWidget();
 		return;
 	}
 
@@ -213,6 +214,7 @@ void AExceptionPlayerController::BindInventoryWidgetToPawn()
 	BoundInventoryComponent = InventoryComponent;
 	BoundInventoryComponent->OnInventoryChanged.AddUniqueDynamic(this, &AExceptionPlayerController::HandleInventoryChanged);
 	BoundInventoryComponent->OnSlotChanged.AddUniqueDynamic(this, &AExceptionPlayerController::HandleInventorySlotChanged);
+	PushInventoryToWidget();
 }
 
 void AExceptionPlayerController::UnbindInventoryWidgetFromPawn()
@@ -229,11 +231,6 @@ void AExceptionPlayerController::UnbindInventoryWidgetFromPawn()
 
 void AExceptionPlayerController::PushInventoryToWidget()
 {
-	if (!InventoryWidget)
-	{
-		return;
-	}
-
 	UBRInventoryComponent* InventoryComponent = BoundInventoryComponent ? BoundInventoryComponent.Get() : GetPlayerInventoryComponent();
 	if (!InventoryComponent)
 	{
@@ -248,6 +245,11 @@ void AExceptionPlayerController::PushInventoryToWidget()
 			const int32 InventorySlotIndex = 20 + HotbarIndex;
 			PlayerHUD->SetHotbarSlot(HotbarIndex, InventorySlotIndex, Slots.IsValidIndex(InventorySlotIndex) ? Slots[InventorySlotIndex] : FBRInventorySlot());
 		}
+	}
+
+	if (!InventoryWidget)
+	{
+		return;
 	}
 
 	if (FObjectPropertyBase* InventoryProperty = CastField<FObjectPropertyBase>(InventoryWidget->GetClass()->FindPropertyByName(TEXT("InventoryComponent"))))

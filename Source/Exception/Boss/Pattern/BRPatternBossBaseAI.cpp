@@ -62,22 +62,12 @@ void ABRPatternBossBase::UpdateBossAI(float DeltaSeconds)
 	MoveTowardTarget(DeltaSeconds);
 }
 
-void ABRPatternBossBase::FaceTarget(float DeltaSeconds)
+void ABRPatternBossBase::FaceTarget(float)
 {
-	if (!CurrentTarget)
+	if (!GetActorRotation().IsNearlyZero())
 	{
-		return;
+		SetActorRotation(FRotator::ZeroRotator);
 	}
-
-	const FVector ToTarget = CurrentTarget->GetActorLocation() - GetActorLocation();
-	if (ToTarget.IsNearlyZero())
-	{
-		return;
-	}
-
-	const FRotator TargetRotation = FRotationMatrix::MakeFromX(FVector(ToTarget.X, ToTarget.Y, 0.0f)).Rotator();
-	const FRotator NewRotation = FMath::RInterpTo(GetActorRotation(), TargetRotation, DeltaSeconds, RotationInterpSpeed);
-	SetActorRotation(NewRotation);
 }
 
 void ABRPatternBossBase::MoveTowardTarget(float DeltaSeconds)

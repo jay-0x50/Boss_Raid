@@ -12,7 +12,7 @@ ABRSelvaraBoss::ABRSelvaraBoss()
 	MoveSpeed = 135.0f;
 	Phase2MoveSpeedMultiplier = 1.18f;
 	Phase2CooldownMultiplier = 0.72f;
-	RotationInterpSpeed = 2.2f;
+	RotationInterpSpeed = 0.0f;
 	MeleeStandbyDistance = 600.0f;
 	RangedStandbyDistance = 980.0f;
 	RangedComfortMinDistance = 540.0f;

@@ -3,10 +3,10 @@
 #include "Boss/AI/BRBossAIController.h"
 #include "Boss/Team/BRBossTeamCoordinator.h"
 #include "BRStatComponent.h"
-#include "Components/CapsuleComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/World.h"
 
 ABRBossBase::ABRBossBase()
 {
@@ -14,17 +14,8 @@ ABRBossBase::ABRBossBase()
 	AIControllerClass = ABRBossAIController::StaticClass();
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 
-	BossCollision = CreateDefaultSubobject<UCapsuleComponent>(TEXT("BossCollision"));
-	SetRootComponent(BossCollision);
-	BossCollision->InitCapsuleSize(BossCollisionRadius, BossCollisionHalfHeight);
-	BossCollision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-	BossCollision->SetCollisionObjectType(ECC_Pawn);
-	BossCollision->SetCollisionResponseToAllChannels(ECR_Block);
-	BossCollision->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
-	BossCollision->SetGenerateOverlapEvents(false);
-
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
-	SceneRoot->SetupAttachment(BossCollision);
+	SetRootComponent(SceneRoot);
 
 	VisualRoot = CreateDefaultSubobject<USceneComponent>(TEXT("VisualRoot"));
 	VisualRoot->SetupAttachment(SceneRoot);
@@ -55,13 +46,13 @@ ABRBossBase::ABRBossBase()
 void ABRBossBase::BeginPlay()
 {
 	Super::BeginPlay();
+	InitialBossTransform = GetActorTransform();
 
 	if (!GetController())
 	{
 		SpawnDefaultController();
 	}
 
-	ApplyBossCollisionSettings();
 	ApplyMeshVisualTransform();
 
 	if (StatComponent)
@@ -79,6 +70,10 @@ void ABRBossBase::BeginPlay()
 	}
 
 	ResetBoss();
+	if (!bCombatAIEnabled)
+	{
+		PrepareForArenaInactive();
+	}
 }
 
 void ABRBossBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -94,13 +89,14 @@ void ABRBossBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
 void ABRBossBase::OnConstruction(const FTransform& Transform)
 {
 	Super::OnConstruction(Transform);
-	ApplyBossCollisionSettings();
 	ApplyMeshVisualTransform();
 }
 
 void ABRBossBase::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+
+	ApplyGroundGravity(DeltaSeconds);
 
 	if (ABRBossAIController* BossAIController = GetBossAIController())
 	{
@@ -152,26 +148,72 @@ void ABRBossBase::ApplyMeshVisualTransform()
 		SkeletalMeshComponent->SetHiddenInGame(!bUseSkeletalMesh);
 		SkeletalMeshComponent->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		SkeletalMeshComponent->SetGenerateOverlapEvents(false);
-		if (bUseSkeletalMesh && SkeletalMeshComponent->GetAnimationMode() == EAnimationMode::AnimationSingleNode)
-		{
-			SkeletalMeshComponent->Play(true);
-		}
+		SetBossAnimationPlaying(bUseSkeletalMesh && bCombatAIEnabled && !bIsDead);
 	}
 }
 
-void ABRBossBase::ApplyBossCollisionSettings()
+void ABRBossBase::SetBossAnimationPlaying(bool bShouldPlay)
 {
-	if (!BossCollision)
+	if (!SkeletalMeshComponent || SkeletalMeshComponent->GetAnimationMode() != EAnimationMode::AnimationSingleNode)
 	{
 		return;
 	}
 
-	BossCollision->SetCapsuleSize(BossCollisionRadius, BossCollisionHalfHeight, true);
-	BossCollision->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-	BossCollision->SetCollisionObjectType(ECC_Pawn);
-	BossCollision->SetCollisionResponseToAllChannels(ECR_Block);
-	BossCollision->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
-	BossCollision->SetGenerateOverlapEvents(false);
+	if (bShouldPlay)
+	{
+		SkeletalMeshComponent->Play(true);
+		return;
+	}
+
+	SkeletalMeshComponent->Stop();
+	SkeletalMeshComponent->SetPosition(0.0f, false);
+}
+
+void ABRBossBase::NotifyBossAnimationStage(EBRBossAnimationStage Stage, FName ActionName)
+{
+	OnAnimationStageChanged.Broadcast(Stage, ActionName);
+	BP_BossAnimationStageChanged(Stage, ActionName);
+}
+
+void ABRBossBase::ApplyGroundGravity(float DeltaSeconds)
+{
+	if (!bUseGroundGravity || DeltaSeconds <= 0.0f || !GetWorld())
+	{
+		return;
+	}
+
+	const FVector ActorLocation = GetActorLocation();
+	const FVector TraceStart = ActorLocation;
+	const FVector TraceEnd = ActorLocation - FVector(0.0f, 0.0f, GroundTraceActorHalfHeight + GroundTraceDistance);
+
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(BossGroundGravity), false, this);
+	FHitResult Hit;
+	const bool bHitGround = GetWorld()->LineTraceSingleByChannel(Hit, TraceStart, TraceEnd, ECC_Visibility, QueryParams);
+
+	if (bHitGround)
+	{
+		const float DesiredActorZ = Hit.Location.Z + GroundTraceActorHalfHeight;
+		const float HeightDelta = ActorLocation.Z - DesiredActorZ;
+
+		if (HeightDelta > GroundSnapTolerance)
+		{
+			VerticalFallSpeed = FMath::Max(VerticalFallSpeed + GroundGravity * DeltaSeconds, 0.0f);
+			const float FallDistance = FMath::Min(VerticalFallSpeed * DeltaSeconds, HeightDelta);
+			AddActorWorldOffset(FVector(0.0f, 0.0f, -FallDistance), true);
+			return;
+		}
+
+		if (FMath::Abs(HeightDelta) > KINDA_SMALL_NUMBER)
+		{
+			SetActorLocation(FVector(ActorLocation.X, ActorLocation.Y, DesiredActorZ), true);
+		}
+
+		VerticalFallSpeed = 0.0f;
+		return;
+	}
+
+	VerticalFallSpeed = FMath::Max(VerticalFallSpeed + GroundGravity * DeltaSeconds, 0.0f);
+	AddActorWorldOffset(FVector(0.0f, 0.0f, -VerticalFallSpeed * DeltaSeconds), true);
 }
 
 void ABRBossBase::ClearBaseTimers()

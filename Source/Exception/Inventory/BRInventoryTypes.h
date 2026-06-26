@@ -4,6 +4,17 @@
 #include "Engine/Texture2D.h"
 #include "BRInventoryTypes.generated.h"
 
+UENUM(BlueprintType)
+enum class EBRInventoryItemEffect : uint8
+{
+	None,
+	HealHP,
+	RestoreStamina,
+	RestoreAll,
+	GrantUpgradePoint,
+	HiddenRootWeapon
+};
+
 USTRUCT(BlueprintType)
 struct EXCEPTION_API FBRInventoryItemDefinition
 {
@@ -29,6 +40,12 @@ struct EXCEPTION_API FBRInventoryItemDefinition
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Exception|Inventory")
 	bool bConsumeOnUse = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Exception|Inventory")
+	EBRInventoryItemEffect Effect = EBRInventoryItemEffect::None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Exception|Inventory")
+	float EffectValue = 0.0f;
 
 	bool IsValid() const
 	{

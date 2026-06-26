@@ -36,6 +36,9 @@ private:
 	void BuildInventorySlots(UUniformGridPanel* SlotGrid, UUniformGridPanel* HotbarGrid);
 	void UpdateDetailsPanel(const FBRInventorySlot& InventorySlot);
 
+	UFUNCTION()
+	void HandleCloseClicked();
+
 	UPROPERTY()
 	TObjectPtr<UBRInventoryComponent> InventoryComponent;
 
