@@ -11,6 +11,7 @@ class UBehaviorTree;
 class USceneComponent;
 class UStaticMeshComponent;
 class USkeletalMeshComponent;
+class UAnimationAsset;
 class ABRBossTeamCoordinator;
 
 UENUM(BlueprintType)
@@ -278,6 +279,12 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|AI")
 	TObjectPtr<UBehaviorTree> BossBehaviorTree;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation")
+	TMap<EBRBossAnimationStage, TObjectPtr<UAnimationAsset>> StageAnimations;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation")
+	TMap<FName, TObjectPtr<UAnimationAsset>> ActionAnimations;
+
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category="Exception|Team")
 	TObjectPtr<ABRBossTeamCoordinator> TeamCoordinator;
 
@@ -300,13 +307,16 @@ protected:
 	bool bIsBeingExecuted = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Debug")
-	bool bShowDebug = true;
+	bool bShowDebug = false;
 
 	UPROPERTY(Transient)
 	TObjectPtr<AActor> CurrentTarget;
 
 	UPROPERTY(Transient)
 	TObjectPtr<AActor> LastDamageCauser;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAnimationAsset> CurrentBossAnimationAsset;
 
 	float VerticalFallSpeed = 0.0f;
 
@@ -330,6 +340,7 @@ protected:
 	void RefreshPhaseByHP();
 	void ApplyMeshVisualTransform();
 	void SetBossAnimationPlaying(bool bShouldPlay);
+	void PlayBossStageAnimation(EBRBossAnimationStage Stage, FName ActionName);
 	void ApplyGroundGravity(float DeltaSeconds);
 	void NotifyBossAnimationStage(EBRBossAnimationStage Stage, FName ActionName = NAME_None);
 	bool CanStartCoordinatedAttack() const;

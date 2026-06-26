@@ -66,6 +66,18 @@ protected:
 	/** If true, the character is currently playing an attack animation */
 	bool bIsAttacking = false;
 
+	/** If true, the character is briefly staggered and cannot start attacks. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Damage", meta=(AllowPrivateAccess="true"))
+	bool bIsStunned = false;
+
+	/** Brief hit-stun window used to make field enemies interruptible. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Damage", meta=(ClampMin="0.0", Units="s", AllowPrivateAccess="true"))
+	float HitStunDuration = 0.45f;
+
+	/** Experience granted to the player when this field enemy dies. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Reward", meta=(ClampMin="0", AllowPrivateAccess="true"))
+	int32 ExperienceReward = 35;
+
 	/** Distance ahead of the character that melee attack sphere collision traces will extend */
 	UPROPERTY(EditAnywhere, Category="Melee Attack|Trace", meta = (ClampMin = 0, ClampMax = 500, Units = "cm"))
 	float MeleeTraceDistance = 75.0f;
@@ -133,6 +145,9 @@ protected:
 	/** Enemy death timer */
 	FTimerHandle DeathTimer;
 
+	/** Hit-stun timer */
+	FTimerHandle StunTimer;
+
 	/** Attack montage ended delegate */
 	FOnMontageEnded OnAttackMontageEnded;
 
@@ -141,6 +156,9 @@ protected:
 
 	/** Last recorded game time we were attacked */
 	float LastDangerTime = -1000.0f;
+
+	UPROPERTY(Transient)
+	TObjectPtr<AActor> LastDamageCauser;
 
 public:
 	/** Attack completed internal delegate to notify StateTree tasks */
@@ -207,6 +225,9 @@ protected:
 
 	/** Removes this character from the level after it dies */
 	void RemoveFromLevel();
+
+	/** Clears hit-stun and lets AI attacks resume. */
+	void EndHitStun();
 
 public:
 

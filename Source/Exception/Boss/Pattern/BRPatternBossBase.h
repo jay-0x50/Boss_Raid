@@ -128,7 +128,7 @@ protected:
 	TArray<FBRBossPatternData> AttackPatterns;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Debug")
-	bool bDrawAttackDebug = true;
+	bool bDrawAttackDebug = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Debug")
 	bool bDrawAttackTelegraph = true;

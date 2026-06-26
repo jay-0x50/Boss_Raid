@@ -11,6 +11,7 @@
 #include "TimerManager.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Animation/AnimInstance.h"
+#include "Player/Character/ExceptionCharacter.h"
 
 ACombatEnemy::ACombatEnemy()
 {
@@ -45,7 +46,7 @@ ACombatEnemy::ACombatEnemy()
 void ACombatEnemy::DoAIComboAttack()
 {
 	// ignore if we're already playing an attack animation
-	if (bIsAttacking)
+	if (bIsAttacking || bIsStunned || CurrentHP <= 0.0f)
 	{
 		return;
 	}
@@ -76,7 +77,7 @@ void ACombatEnemy::DoAIComboAttack()
 void ACombatEnemy::DoAIChargedAttack()
 {
 	// ignore if we're already playing an attack animation
-	if (bIsAttacking)
+	if (bIsAttacking || bIsStunned || CurrentHP <= 0.0f)
 	{
 		return;
 	}
@@ -223,6 +224,17 @@ void ACombatEnemy::ApplyDamage(float Damage, AActor* DamageCauser, const FVector
 			AnimInstance->Montage_Stop(0.1f, ComboAttackMontage);
 			AnimInstance->Montage_Stop(0.1f, ChargedAttackMontage);
 		}
+		bIsAttacking = false;
+		OnAttackCompleted.ExecuteIfBound();
+
+		if (CurrentHP > 0.0f && HitStunDuration > 0.0f)
+		{
+			bIsStunned = true;
+			GetCharacterMovement()->StopMovementImmediately();
+			GetCharacterMovement()->DisableMovement();
+			GetWorldTimerManager().ClearTimer(StunTimer);
+			GetWorldTimerManager().SetTimer(StunTimer, this, &ACombatEnemy::EndHitStun, HitStunDuration, false);
+		}
 
 		// pass control to BP to play effects, etc.
 		ReceivedDamage(ActualDamage, DamageLocation, DamageImpulse.GetSafeNormal());
@@ -245,6 +257,11 @@ void ACombatEnemy::HandleDeath()
 
 	// call the died delegate to notify any subscribers
 	OnEnemyDied.Broadcast();
+
+	if (AExceptionCharacter* PlayerCharacter = Cast<AExceptionCharacter>(LastDamageCauser))
+	{
+		PlayerCharacter->AddExperience(ExperienceReward);
+	}
 
 	// set up the death timer
 	GetWorld()->GetTimerManager().SetTimer(DeathTimer, this, &ACombatEnemy::RemoveFromLevel, DeathRemovalTime);
@@ -272,6 +289,18 @@ void ACombatEnemy::RemoveFromLevel()
 	Destroy();
 }
 
+void ACombatEnemy::EndHitStun()
+{
+	if (CurrentHP <= 0.0f)
+	{
+		return;
+	}
+
+	bIsStunned = false;
+	GetWorldTimerManager().ClearTimer(StunTimer);
+	GetCharacterMovement()->SetMovementMode(MOVE_Walking);
+}
+
 float ACombatEnemy::TakeDamage(float Damage, struct FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
 	// only process damage if the character is still alive
@@ -279,6 +308,8 @@ float ACombatEnemy::TakeDamage(float Damage, struct FDamageEvent const& DamageEv
 	{
 		return 0.0f;
 	}
+
+	LastDamageCauser = DamageCauser;
 
 	// reduce the current HP
 	CurrentHP -= Damage;
@@ -340,4 +371,5 @@ void ACombatEnemy::EndPlay(EEndPlayReason::Type EndPlayReason)
 
 	// clear the death timer
 	GetWorld()->GetTimerManager().ClearTimer(DeathTimer);
+	GetWorld()->GetTimerManager().ClearTimer(StunTimer);
 }

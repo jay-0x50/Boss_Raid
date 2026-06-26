@@ -4,6 +4,7 @@
 
 #include "BRInventoryComponent.h"
 #include "BRHiddenStorySubsystem.h"
+#include "BRPlayerGraveMarker.h"
 #include "ExceptionGameMode.h"
 #include "Engine/Engine.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -102,6 +103,13 @@ void AExceptionCharacter::ApplySavedProgression(int32 SavedPlayerLevel, int32 Sa
 	BroadcastStamina();
 }
 
+void AExceptionCharacter::ApplySavedExperience(int32 SavedCurrentExperience, int32 SavedDroppedExperience)
+{
+	CurrentExperience = FMath::Max(0, SavedCurrentExperience);
+	DroppedExperience = FMath::Max(0, SavedDroppedExperience);
+	OnProgressionChanged.Broadcast();
+}
+
 void AExceptionCharacter::AddUpgradePoints(int32 Amount)
 {
 	if (Amount <= 0)
@@ -113,9 +121,57 @@ void AExceptionCharacter::AddUpgradePoints(int32 Amount)
 	OnProgressionChanged.Broadcast();
 }
 
+void AExceptionCharacter::AddExperience(int32 Amount)
+{
+	if (Amount <= 0)
+	{
+		return;
+	}
+
+	CurrentExperience += Amount;
+	OnProgressionChanged.Broadcast();
+
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(1014, 1.5f, FColor::Green, FString::Printf(TEXT("+%d XP"), Amount));
+	}
+}
+
+int32 AExceptionCharacter::DropCurrentExperience()
+{
+	const int32 ExperienceToDrop = FMath::Max(0, CurrentExperience);
+	CurrentExperience = 0;
+	DroppedExperience = ExperienceToDrop;
+	OnProgressionChanged.Broadcast();
+	return ExperienceToDrop;
+}
+
+void AExceptionCharacter::RecoverDroppedExperience(int32 Amount)
+{
+	if (Amount <= 0)
+	{
+		return;
+	}
+
+	CurrentExperience += Amount;
+	DroppedExperience = FMath::Max(0, DroppedExperience - Amount);
+	OnProgressionChanged.Broadcast();
+
+	if (GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(1015, 2.0f, FColor::Green, FString::Printf(TEXT("Recovered %d XP"), Amount));
+	}
+}
+
+int32 AExceptionCharacter::GetLevelUpExperienceCost() const
+{
+	return BaseLevelUpExperienceCost + FMath::Max(0, PlayerLevel - 1) * LevelUpExperienceCostIncrease;
+}
+
 void AExceptionCharacter::AwardBossVictoryRewards(AActor* DefeatedBoss)
 {
 	AddUpgradePoints(BossKillUpgradePointReward);
+	AddExperience(BossKillUpgradePointReward * GetLevelUpExperienceCost());
 
 	if (InventoryComponent)
 	{
@@ -133,12 +189,14 @@ void AExceptionCharacter::AwardBossVictoryRewards(AActor* DefeatedBoss)
 
 bool AExceptionCharacter::SpendUpgradePoint(EBRPlayerUpgradeStat UpgradeStat)
 {
-	if (UpgradePoints <= 0 || CombatState == EBRPlayerCombatState::Dead)
+	const int32 LevelUpCost = GetLevelUpExperienceCost();
+	if (CurrentExperience < LevelUpCost || CombatState == EBRPlayerCombatState::Dead)
 	{
 		return false;
 	}
 
-	--UpgradePoints;
+	CurrentExperience -= LevelUpCost;
+	UpgradePoints = FMath::Max(0, UpgradePoints - 1);
 	++PlayerLevel;
 
 	switch (UpgradeStat)
@@ -298,6 +356,7 @@ FBRInventoryItemDefinition AExceptionCharacter::MakePotionItem() const
 	Item.ItemId = TEXT("Potion_RuntimeFlask");
 	Item.DisplayName = FText::FromString(TEXT("Runtime Flask"));
 	Item.Description = FText::FromString(TEXT("Restores HP. A small patch of stable runtime memory."));
+	Item.Category = EBRInventoryItemCategory::Consumable;
 	Item.MaxStack = 9;
 	Item.bUsable = true;
 	Item.bConsumeOnUse = true;
@@ -312,6 +371,7 @@ FBRInventoryItemDefinition AExceptionCharacter::MakeStaminaItem() const
 	Item.ItemId = TEXT("Potion_ThreadSpark");
 	Item.DisplayName = FText::FromString(TEXT("Thread Spark"));
 	Item.Description = FText::FromString(TEXT("Restores stamina. Useful before a long dodge chain."));
+	Item.Category = EBRInventoryItemCategory::Consumable;
 	Item.MaxStack = 9;
 	Item.bUsable = true;
 	Item.bConsumeOnUse = true;
@@ -326,6 +386,7 @@ FBRInventoryItemDefinition AExceptionCharacter::MakeHiddenRootWeaponItem() const
 	Item.ItemId = TEXT("Weapon_MimikatzAuthoritySeized");
 	Item.DisplayName = FText::FromString(TEXT("Mimikatz, Authority Seized"));
 	Item.Description = FText::FromString(TEXT("Hidden root weapon. Deals heavy authority damage to CMD."));
+	Item.Category = EBRInventoryItemCategory::Equipment;
 	Item.MaxStack = 1;
 	Item.bUsable = true;
 	Item.bConsumeOnUse = false;
@@ -356,6 +417,28 @@ void AExceptionCharacter::RespawnAtCheckpoint()
 	}
 
 	UE_LOG(LogTemplateCharacter, Log, TEXT("Player respawned at checkpoint: %s"), *RespawnTransform.GetLocation().ToString());
+}
+
+void AExceptionCharacter::SpawnPlayerGraveMarker()
+{
+	if (!GetWorld())
+	{
+		return;
+	}
+
+	UClass* GraveClass = PlayerGraveClass ? PlayerGraveClass.Get() : ABRPlayerGraveMarker::StaticClass();
+	const int32 ExperienceToDrop = DropCurrentExperience();
+	FTransform GraveTransform = GetActorTransform();
+	GraveTransform.SetLocation(GetActorLocation() + FVector(0.0f, 0.0f, 70.0f));
+	GraveTransform.SetRotation(FRotator(0.0f, GetActorRotation().Yaw, 0.0f).Quaternion());
+	GraveTransform.SetScale3D(FVector::OneVector);
+
+	FActorSpawnParameters SpawnParams;
+	SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+	if (ABRPlayerGraveMarker* GraveMarker = GetWorld()->SpawnActor<ABRPlayerGraveMarker>(GraveClass, GraveTransform, SpawnParams))
+	{
+		GraveMarker->SetStoredExperience(ExperienceToDrop);
+	}
 }
 
 void AExceptionCharacter::BroadcastHP()

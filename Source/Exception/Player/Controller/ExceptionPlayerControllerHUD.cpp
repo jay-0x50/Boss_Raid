@@ -203,7 +203,7 @@ void AExceptionPlayerController::UpdateRuntimeGauge(FName GaugeWidgetName, const
 			{
 				if (UProgressBar* GaugeBar = Cast<UProgressBar>(ChildWidget))
 				{
-					FProgressBarStyle Style = GaugeBar->WidgetStyle;
+					FProgressBarStyle Style = GaugeBar->GetWidgetStyle();
 					Style.FillImage.TintColor = FSlateColor(GaugeColor);
 					GaugeBar->SetWidgetStyle(Style);
 

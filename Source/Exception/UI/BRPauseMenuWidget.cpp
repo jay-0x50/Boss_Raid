@@ -37,7 +37,11 @@ void UBRPauseMenuWidget::RefreshMenu()
 
 	if (PointsText)
 	{
-		PointsText->SetText(FText::FromString(FString::Printf(TEXT("Upgrade Points: %d"), PlayerCharacter->GetUpgradePoints())));
+		PointsText->SetText(FText::FromString(FString::Printf(
+			TEXT("XP %d / %d   Dropped %d"),
+			PlayerCharacter->GetCurrentExperience(),
+			PlayerCharacter->GetLevelUpExperienceCost(),
+			PlayerCharacter->GetDroppedExperience())));
 	}
 
 	if (VitalityText)
@@ -68,7 +72,10 @@ void UBRPauseMenuWidget::HandleLevelVitalityClicked()
 {
 	if (AExceptionCharacter* PlayerCharacter = GetOwningPlayer() ? Cast<AExceptionCharacter>(GetOwningPlayer()->GetPawn()) : nullptr)
 	{
-		PlayerCharacter->SpendUpgradePoint(EBRPlayerUpgradeStat::Vitality);
+		if (!PlayerCharacter->SpendUpgradePoint(EBRPlayerUpgradeStat::Vitality) && StatusText)
+		{
+			StatusText->SetText(FText::FromString(TEXT("Not enough XP.")));
+		}
 		RefreshMenu();
 	}
 }
@@ -77,7 +84,10 @@ void UBRPauseMenuWidget::HandleLevelEnduranceClicked()
 {
 	if (AExceptionCharacter* PlayerCharacter = GetOwningPlayer() ? Cast<AExceptionCharacter>(GetOwningPlayer()->GetPawn()) : nullptr)
 	{
-		PlayerCharacter->SpendUpgradePoint(EBRPlayerUpgradeStat::Endurance);
+		if (!PlayerCharacter->SpendUpgradePoint(EBRPlayerUpgradeStat::Endurance) && StatusText)
+		{
+			StatusText->SetText(FText::FromString(TEXT("Not enough XP.")));
+		}
 		RefreshMenu();
 	}
 }
@@ -86,7 +96,10 @@ void UBRPauseMenuWidget::HandleLevelPowerClicked()
 {
 	if (AExceptionCharacter* PlayerCharacter = GetOwningPlayer() ? Cast<AExceptionCharacter>(GetOwningPlayer()->GetPawn()) : nullptr)
 	{
-		PlayerCharacter->SpendUpgradePoint(EBRPlayerUpgradeStat::Power);
+		if (!PlayerCharacter->SpendUpgradePoint(EBRPlayerUpgradeStat::Power) && StatusText)
+		{
+			StatusText->SetText(FText::FromString(TEXT("Not enough XP.")));
+		}
 		RefreshMenu();
 	}
 }
@@ -172,7 +185,7 @@ void UBRPauseMenuWidget::BuildMenuWidget()
 	}
 
 	StatusText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("MenuStatusText"));
-	StatusText->SetText(FText::FromString(TEXT("Ready.")));
+	StatusText->SetText(FText::FromString(TEXT("Rest at checkpoint.")));
 	StatusText->SetColorAndOpacity(FSlateColor(FLinearColor(0.0f, 0.95f, 0.86f, 1.0f)));
 	StatusText->SetFont(FSlateFontInfo(FCoreStyle::GetDefaultFont(), 13));
 	if (UVerticalBoxSlot* StatusSlot = CommandBox->AddChildToVerticalBox(StatusText))
@@ -224,8 +237,8 @@ void UBRPauseMenuWidget::BuildMenuWidget()
 		LevelBox->AddChildToVerticalBox(StatText);
 	}
 
-	UTextBlock* SettingsTitleText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("SettingsTitleText"));
-	SettingsTitleText->SetText(FText::FromString(TEXT("SETTINGS")));
+	UTextBlock* SettingsTitleText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("CheckpointTitleText"));
+	SettingsTitleText->SetText(FText::FromString(TEXT("CHECKPOINT")));
 	SettingsTitleText->SetColorAndOpacity(FSlateColor(FLinearColor(0.0f, 0.95f, 0.86f, 1.0f)));
 	SettingsTitleText->SetFont(FSlateFontInfo(FCoreStyle::GetDefaultFont(), 18));
 	if (UVerticalBoxSlot* SettingsTitleSlot = LevelBox->AddChildToVerticalBox(SettingsTitleText))
@@ -235,9 +248,9 @@ void UBRPauseMenuWidget::BuildMenuWidget()
 
 	const TCHAR* SettingsLines[] =
 	{
-		TEXT("ESC : Open / Close Menu"),
-		TEXT("I   : Inventory"),
-		TEXT("Q/E/R : Shortcut Slots")
+		TEXT("Spend XP to level one stat."),
+		TEXT("Unspent XP drops on death."),
+		TEXT("Recover your grave to reclaim it.")
 	};
 
 	for (const TCHAR* SettingsLine : SettingsLines)

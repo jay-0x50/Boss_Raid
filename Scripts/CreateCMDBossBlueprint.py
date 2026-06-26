@@ -58,6 +58,18 @@ def find_first_asset(asset_class_names, preferred_keywords=None):
     return None, ""
 
 
+def find_anim(preferred_keywords):
+    anim_asset, _ = find_first_asset({"AnimSequence", "AnimationAsset"}, preferred_keywords)
+    return anim_asset
+
+
+def map_key_name(value):
+    try:
+        return unreal.Name(value)
+    except Exception:
+        return value
+
+
 def get_parent_class():
     parent = unreal.load_class(None, "/Script/Exception.BRCMDBoss")
     if parent:
@@ -160,6 +172,49 @@ def configure_cmd_patterns(cdo):
         log(f"Skipped CMD pattern table: {exc}")
 
 
+def configure_cmd_animations(cdo, default_anim):
+    try:
+        walking_anim = find_anim(["Walking_withSkin_Anim", default_anim.get_name() if default_anim else "_Anim"]) or default_anim
+        running_anim = find_anim(["Running_withSkin_Anim", "Running"])
+        hook_anim = find_anim(["Left_Hook_from_Guard_withSkin_Anim", "Left_Hook"])
+        cast_anim = find_anim(["mage_soell_cast_3_withSkin_Anim", "mage", "spell", "soell"])
+
+        idle = enum_value(unreal.BRBossAnimationStage, "IDLE", "Idle")
+        intro = enum_value(unreal.BRBossAnimationStage, "INTRO", "Intro")
+        move = enum_value(unreal.BRBossAnimationStage, "MOVE", "Move")
+        windup = enum_value(unreal.BRBossAnimationStage, "PATTERN_WINDUP", "PatternWindup")
+        impact = enum_value(unreal.BRBossAnimationStage, "PATTERN_IMPACT", "PatternImpact")
+        recovery = enum_value(unreal.BRBossAnimationStage, "PATTERN_RECOVERY", "PatternRecovery")
+        groggy = enum_value(unreal.BRBossAnimationStage, "GROGGY", "Groggy")
+        death = enum_value(unreal.BRBossAnimationStage, "DEATH", "Death")
+
+        stage_animations = {
+            idle: walking_anim,
+            intro: cast_anim or walking_anim,
+            move: running_anim or walking_anim,
+            windup: cast_anim or hook_anim or walking_anim,
+            impact: hook_anim or cast_anim or walking_anim,
+            recovery: walking_anim,
+            groggy: walking_anim,
+            death: walking_anim,
+        }
+        stage_animations = {stage: animation for stage, animation in stage_animations.items() if animation}
+        set_property_if_exists(cdo, "StageAnimations", stage_animations)
+
+        action_animations = {
+            map_key_name("DIR_Sweep"): hook_anim or walking_anim,
+            map_key_name("PING_Flood"): cast_anim or walking_anim,
+            map_key_name("TASKKILL_Charge"): running_anim or walking_anim,
+            map_key_name("ROOT_PromptCrash"): cast_anim or walking_anim,
+            map_key_name("FORMAT_RuntimeZone"): cast_anim or walking_anim,
+            map_key_name("AUTHORITY_Seize"): running_anim or cast_anim or walking_anim,
+        }
+        action_animations = {action: animation for action, animation in action_animations.items() if animation}
+        set_property_if_exists(cdo, "ActionAnimations", action_animations)
+    except Exception as exc:
+        log(f"Skipped CMD animation maps: {exc}")
+
+
 def configure_blueprint(blueprint):
     skeletal_mesh, mesh_path = find_first_asset({"SkeletalMesh"}, ["Walking_withSkin", "Running_withSkin", "withSkin"])
     if not skeletal_mesh:
@@ -171,9 +226,9 @@ def configure_blueprint(blueprint):
     cdo = get_cdo(blueprint)
 
     set_property_if_exists(cdo, "VisualMeshType", unreal.BRBossVisualMeshType.SKELETAL_MESH)
-    set_property_if_exists(cdo, "MeshRelativeLocation", unreal.Vector(0.0, 0.0, -100.0))
+    set_property_if_exists(cdo, "MeshRelativeLocation", unreal.Vector(0.0, 0.0, -90.0))
     set_property_if_exists(cdo, "MeshRelativeRotation", unreal.Rotator(0.0, 0.0, 0.0))
-    set_property_if_exists(cdo, "MeshRelativeScale", unreal.Vector(100.0, 100.0, 100.0))
+    set_property_if_exists(cdo, "MeshRelativeScale", unreal.Vector(1.0, 1.0, 1.0))
     set_property_if_exists(cdo, "GroundTraceActorHalfHeight", 170.0)
 
     set_property_if_exists(cdo, "InitialMaxHP", 900.0)
@@ -182,14 +237,15 @@ def configure_blueprint(blueprint):
     set_property_if_exists(cdo, "Phase2StartHPRatio", 0.45)
     set_property_if_exists(cdo, "bCombatAIEnabled", False)
     set_property_if_exists(cdo, "DetectionRange", 2800.0)
-    set_property_if_exists(cdo, "MoveSpeed", 145.0)
+    set_property_if_exists(cdo, "MoveSpeed", 260.0)
     set_property_if_exists(cdo, "Phase2MoveSpeedMultiplier", 1.18)
     set_property_if_exists(cdo, "Phase2CooldownMultiplier", 0.62)
-    set_property_if_exists(cdo, "RotationInterpSpeed", 0.0)
-    set_property_if_exists(cdo, "MeleeStandbyDistance", 360.0)
+    set_property_if_exists(cdo, "RotationInterpSpeed", 8.0)
+    set_property_if_exists(cdo, "MeleeStandbyDistance", 420.0)
     set_property_if_exists(cdo, "RangedStandbyDistance", 1200.0)
     set_property_if_exists(cdo, "RangedComfortMinDistance", 700.0)
     configure_cmd_patterns(cdo)
+    configure_cmd_animations(cdo, anim_asset)
 
     skeletal_component = find_component(cdo, unreal.SkeletalMeshComponent, "SkeletalMeshComponent")
     if not skeletal_component:

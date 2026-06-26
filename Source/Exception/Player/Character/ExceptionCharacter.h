@@ -15,6 +15,7 @@ class UInputMappingContext;
 class UAnimMontage;
 class UBRInventoryComponent;
 class ABRBossBase;
+class ABRPlayerGraveMarker;
 struct FInputActionValue;
 struct FBRInventoryItemDefinition;
 struct FBRInventorySlot;
@@ -129,6 +130,12 @@ protected:
 	int32 UpgradePoints = 3;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Progression", meta=(ClampMin="0"))
+	int32 CurrentExperience = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Progression")
+	int32 DroppedExperience = 0;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Progression", meta=(ClampMin="0"))
 	int32 VitalityLevel = 0;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Progression", meta=(ClampMin="0"))
@@ -145,6 +152,12 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Progression", meta=(ClampMin="0.0"))
 	float DamagePerPowerLevel = 3.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Progression", meta=(ClampMin="1"))
+	int32 BaseLevelUpExperienceCost = 100;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Progression", meta=(ClampMin="0"))
+	int32 LevelUpExperienceCostIncrease = 35;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Progression", meta=(ClampMin="0.0"))
 	int32 BossKillUpgradePointReward = 1;
@@ -257,14 +270,17 @@ protected:
 	bool bIsParryActive = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Debug")
-	bool bShowCombatDebug = true;
+	bool bShowCombatDebug = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Debug")
-	bool bDrawAttackTraceDebug = true;
+	bool bDrawAttackTraceDebug = false;
 
 	// 리스폰
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Respawn", meta=(ClampMin="0.0", Units="s"))
 	float RespawnDelay = 1.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Respawn")
+	TSubclassOf<ABRPlayerGraveMarker> PlayerGraveClass;
 
 	// 락온
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|LockOn", meta=(ClampMin="0.0", Units="cm"))
@@ -483,6 +499,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Exception|Progression")
 	void ApplySavedProgression(int32 SavedPlayerLevel, int32 SavedUpgradePoints, int32 SavedVitalityLevel, int32 SavedEnduranceLevel, int32 SavedPowerLevel);
 
+	UFUNCTION(BlueprintCallable, Category="Exception|Progression")
+	void ApplySavedExperience(int32 SavedCurrentExperience, int32 SavedDroppedExperience);
+
 	UFUNCTION(BlueprintPure, Category="Exception|Stats")
 	float GetCurrentHP() const { return CurrentHP; }
 
@@ -502,6 +521,15 @@ public:
 	int32 GetUpgradePoints() const { return UpgradePoints; }
 
 	UFUNCTION(BlueprintPure, Category="Exception|Progression")
+	int32 GetCurrentExperience() const { return CurrentExperience; }
+
+	UFUNCTION(BlueprintPure, Category="Exception|Progression")
+	int32 GetDroppedExperience() const { return DroppedExperience; }
+
+	UFUNCTION(BlueprintPure, Category="Exception|Progression")
+	int32 GetLevelUpExperienceCost() const;
+
+	UFUNCTION(BlueprintPure, Category="Exception|Progression")
 	int32 GetVitalityLevel() const { return VitalityLevel; }
 
 	UFUNCTION(BlueprintPure, Category="Exception|Progression")
@@ -512,6 +540,15 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category="Exception|Progression")
 	void AddUpgradePoints(int32 Amount);
+
+	UFUNCTION(BlueprintCallable, Category="Exception|Progression")
+	void AddExperience(int32 Amount);
+
+	UFUNCTION(BlueprintCallable, Category="Exception|Progression")
+	int32 DropCurrentExperience();
+
+	UFUNCTION(BlueprintCallable, Category="Exception|Progression")
+	void RecoverDroppedExperience(int32 Amount);
 
 	UFUNCTION(BlueprintCallable, Category="Exception|Progression")
 	bool SpendUpgradePoint(EBRPlayerUpgradeStat UpgradeStat);
@@ -593,6 +630,7 @@ protected:
 	void DrawCombatDebug() const;
 	FString GetCombatStateName() const;
 	void RegisterInitialCheckpoint();
+	void SpawnPlayerGraveMarker();
 	AActor* FindLockOnTarget() const;
 	void UpdateLockOn(float DeltaSeconds);
 	ABRBossBase* FindExecutionTarget() const;

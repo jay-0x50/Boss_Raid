@@ -123,10 +123,13 @@ void AExceptionPlayerController::SetupInputComponent()
 		InputComponent->BindKey(EKeys::Q, IE_Pressed, this, &AExceptionPlayerController::UseHotbarSlotQ);
 		InputComponent->BindKey(EKeys::E, IE_Pressed, this, &AExceptionPlayerController::UseHotbarSlotE);
 		InputComponent->BindKey(EKeys::R, IE_Pressed, this, &AExceptionPlayerController::UseHotbarSlotR);
-		InputComponent->BindKey(EKeys::F6, IE_Pressed, this, &AExceptionPlayerController::DebugCompleteNelHiddenRoute);
-		InputComponent->BindKey(EKeys::F7, IE_Pressed, this, &AExceptionPlayerController::DebugCollectHiddenFragment);
-		InputComponent->BindKey(EKeys::F8, IE_Pressed, this, &AExceptionPlayerController::DebugGrantMimikatzAuthoritySeized);
-		InputComponent->BindKey(EKeys::F9, IE_Pressed, this, &AExceptionPlayerController::DebugPrintHiddenStoryState);
+		if (bEnableDemoDebugHotkeys)
+		{
+			InputComponent->BindKey(EKeys::F6, IE_Pressed, this, &AExceptionPlayerController::DebugCompleteNelHiddenRoute);
+			InputComponent->BindKey(EKeys::F7, IE_Pressed, this, &AExceptionPlayerController::DebugCollectHiddenFragment);
+			InputComponent->BindKey(EKeys::F8, IE_Pressed, this, &AExceptionPlayerController::DebugGrantMimikatzAuthoritySeized);
+			InputComponent->BindKey(EKeys::F9, IE_Pressed, this, &AExceptionPlayerController::DebugPrintHiddenStoryState);
+		}
 	}
 
 	if (IsLocalPlayerController())

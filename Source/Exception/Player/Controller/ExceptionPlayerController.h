@@ -145,6 +145,9 @@ protected:
 	UPROPERTY(EditAnywhere, Category="Exception|Menu")
 	FName TitleLevelName = TEXT("L_Title");
 
+	UPROPERTY(EditAnywhere, Category="Exception|Debug")
+	bool bEnableDemoDebugHotkeys = false;
+
 	/** If true, the player will use UMG touch controls even if not playing on mobile platforms */
 	UPROPERTY(EditAnywhere, Config, Category = "Input|Touch Controls")
 	bool bForceTouchControls = false;

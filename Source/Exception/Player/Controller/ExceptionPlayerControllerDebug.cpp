@@ -17,6 +17,11 @@ void ShowDebugMessage(const FString& Message, const FColor& Color = FColor::Cyan
 
 void AExceptionPlayerController::DebugCompleteNelHiddenRoute()
 {
+	if (!bEnableDemoDebugHotkeys)
+	{
+		return;
+	}
+
 	AExceptionCharacter* PlayerCharacter = Cast<AExceptionCharacter>(GetPawn());
 	if (!PlayerCharacter)
 	{
@@ -35,6 +40,11 @@ void AExceptionPlayerController::DebugCompleteNelHiddenRoute()
 
 void AExceptionPlayerController::DebugCollectHiddenFragment()
 {
+	if (!bEnableDemoDebugHotkeys)
+	{
+		return;
+	}
+
 	AExceptionCharacter* PlayerCharacter = Cast<AExceptionCharacter>(GetPawn());
 	if (!PlayerCharacter)
 	{
@@ -48,6 +58,11 @@ void AExceptionPlayerController::DebugCollectHiddenFragment()
 
 void AExceptionPlayerController::DebugGrantMimikatzAuthoritySeized()
 {
+	if (!bEnableDemoDebugHotkeys)
+	{
+		return;
+	}
+
 	if (UGameInstance* GameInstance = GetGameInstance())
 	{
 		if (UBRHiddenStorySubsystem* HiddenStory = GameInstance->GetSubsystem<UBRHiddenStorySubsystem>())
@@ -67,6 +82,11 @@ void AExceptionPlayerController::DebugGrantMimikatzAuthoritySeized()
 
 void AExceptionPlayerController::DebugPrintHiddenStoryState()
 {
+	if (!bEnableDemoDebugHotkeys)
+	{
+		return;
+	}
+
 	UBRHiddenStorySubsystem* HiddenStory = GetGameInstance() ? GetGameInstance()->GetSubsystem<UBRHiddenStorySubsystem>() : nullptr;
 	if (!HiddenStory)
 	{

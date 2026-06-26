@@ -15,6 +15,16 @@ enum class EBRInventoryItemEffect : uint8
 	HiddenRootWeapon
 };
 
+UENUM(BlueprintType)
+enum class EBRInventoryItemCategory : uint8
+{
+	Misc,
+	Consumable,
+	Equipment,
+	KeyItem,
+	QuestItem
+};
+
 USTRUCT(BlueprintType)
 struct EXCEPTION_API FBRInventoryItemDefinition
 {
@@ -31,6 +41,9 @@ struct EXCEPTION_API FBRInventoryItemDefinition
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Exception|Inventory")
 	TSoftObjectPtr<UTexture2D> Icon;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Exception|Inventory")
+	EBRInventoryItemCategory Category = EBRInventoryItemCategory::Misc;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Exception|Inventory", meta=(ClampMin="1"))
 	int32 MaxStack = 1;

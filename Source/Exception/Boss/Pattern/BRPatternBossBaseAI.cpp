@@ -62,12 +62,25 @@ void ABRPatternBossBase::UpdateBossAI(float DeltaSeconds)
 	MoveTowardTarget(DeltaSeconds);
 }
 
-void ABRPatternBossBase::FaceTarget(float)
+void ABRPatternBossBase::FaceTarget(float DeltaSeconds)
 {
-	if (!GetActorRotation().IsNearlyZero())
+	if (!CurrentTarget)
 	{
-		SetActorRotation(FRotator::ZeroRotator);
+		return;
 	}
+
+	const FVector ToTarget = CurrentTarget->GetActorLocation() - GetActorLocation();
+	const FVector FlatDirection = FVector(ToTarget.X, ToTarget.Y, 0.0f).GetSafeNormal();
+	if (FlatDirection.IsNearlyZero())
+	{
+		return;
+	}
+
+	const FRotator DesiredRotation = FlatDirection.Rotation();
+	const FRotator NewRotation = RotationInterpSpeed > 0.0f
+		? FMath::RInterpTo(GetActorRotation(), DesiredRotation, DeltaSeconds, RotationInterpSpeed)
+		: DesiredRotation;
+	SetActorRotation(FRotator(0.0f, NewRotation.Yaw, 0.0f));
 }
 
 void ABRPatternBossBase::MoveTowardTarget(float DeltaSeconds)
@@ -90,6 +103,7 @@ void ABRPatternBossBase::MoveTowardTarget(float DeltaSeconds)
 	}
 
 	AddActorWorldOffset(MoveDirection * GetCurrentMoveSpeed() * DeltaSeconds, true);
+	NotifyBossAnimationStage(EBRBossAnimationStage::Move);
 }
 
 void ABRPatternBossBase::MoveToTeamStandbyDistance(float DeltaSeconds, float CurrentDistanceToTarget)
@@ -115,6 +129,7 @@ void ABRPatternBossBase::MoveToTeamStandbyDistance(float DeltaSeconds, float Cur
 
 	const FVector MoveDirection = CurrentDistanceToTarget > DesiredDistance ? DirectionToTarget : -DirectionToTarget;
 	AddActorWorldOffset(MoveDirection * GetCurrentMoveSpeed() * DeltaSeconds, true);
+	NotifyBossAnimationStage(EBRBossAnimationStage::Move);
 }
 
 float ABRPatternBossBase::GetCurrentMoveSpeed() const

@@ -49,6 +49,12 @@ public:
 	int32 PowerLevel = 0;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Save")
+	int32 CurrentExperience = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Save")
+	int32 DroppedExperience = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Save")
 	TArray<FName> DefeatedBossIds;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Save")

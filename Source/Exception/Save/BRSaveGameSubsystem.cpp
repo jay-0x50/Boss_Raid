@@ -34,6 +34,8 @@ bool UBRSaveGameSubsystem::SaveCurrentGame(const FString& SlotName, int32 UserIn
 		SaveGame->VitalityLevel = PlayerCharacter->GetVitalityLevel();
 		SaveGame->EnduranceLevel = PlayerCharacter->GetEnduranceLevel();
 		SaveGame->PowerLevel = PlayerCharacter->GetPowerLevel();
+		SaveGame->CurrentExperience = PlayerCharacter->GetCurrentExperience();
+		SaveGame->DroppedExperience = PlayerCharacter->GetDroppedExperience();
 		if (UBRInventoryComponent* InventoryComponent = PlayerCharacter->GetInventoryComponent())
 		{
 			SaveGame->InventorySlots = InventoryComponent->GetSlots();
@@ -117,6 +119,7 @@ bool UBRSaveGameSubsystem::ApplyPendingLoadedGame()
 	const FTransform RestoreTransform = PendingSaveGame->bHasCheckpoint ? PendingSaveGame->CheckpointTransform : PendingSaveGame->PlayerTransform;
 	PlayerCharacter->SetActorTransform(RestoreTransform, false, nullptr, ETeleportType::TeleportPhysics);
 	PlayerCharacter->ApplySavedProgression(PendingSaveGame->PlayerLevel, PendingSaveGame->UpgradePoints, PendingSaveGame->VitalityLevel, PendingSaveGame->EnduranceLevel, PendingSaveGame->PowerLevel);
+	PlayerCharacter->ApplySavedExperience(PendingSaveGame->CurrentExperience, PendingSaveGame->DroppedExperience);
 	PlayerCharacter->ApplySavedStats(PendingSaveGame->PlayerHP, PendingSaveGame->PlayerStamina);
 	if (UBRInventoryComponent* InventoryComponent = PlayerCharacter->GetInventoryComponent())
 	{

@@ -7,8 +7,19 @@
 
 class UBRInventoryComponent;
 class UBRInventorySlotWidget;
+class UButton;
 class UTextBlock;
 class UUniformGridPanel;
+
+UENUM()
+enum class EBRInventoryTab : uint8
+{
+	All,
+	Equipment,
+	Consumable,
+	KeyItem,
+	QuestItem
+};
 
 UCLASS(Blueprintable, BlueprintType)
 class EXCEPTION_API UBRInventoryWidget : public UUserWidget
@@ -33,17 +44,52 @@ protected:
 
 private:
 	void BuildInventoryWidget();
-	void BuildInventorySlots(UUniformGridPanel* SlotGrid, UUniformGridPanel* HotbarGrid);
+	void BuildInventorySlots(UUniformGridPanel* SlotGrid);
+	void RebuildFilteredSlots();
+	void SetActiveTab(EBRInventoryTab NewTab);
+	bool DoesSlotMatchTab(const FBRInventorySlot& InventorySlot) const;
+	EBRInventoryItemCategory GetResolvedCategory(const FBRInventorySlot& InventorySlot) const;
+	FText GetTabText(EBRInventoryTab Tab) const;
+	FString GetCategoryDisplayName(EBRInventoryItemCategory Category) const;
 	void UpdateDetailsPanel(const FBRInventorySlot& InventorySlot);
+	void ClearDetailsPanel();
+	void UpdateTabVisuals();
 
 	UFUNCTION()
 	void HandleCloseClicked();
+
+	UFUNCTION()
+	void HandleAllTabClicked();
+
+	UFUNCTION()
+	void HandleEquipmentTabClicked();
+
+	UFUNCTION()
+	void HandleConsumableTabClicked();
+
+	UFUNCTION()
+	void HandleKeyItemTabClicked();
+
+	UFUNCTION()
+	void HandleQuestItemTabClicked();
 
 	UPROPERTY()
 	TObjectPtr<UBRInventoryComponent> InventoryComponent;
 
 	UPROPERTY()
 	TArray<TObjectPtr<UBRInventorySlotWidget>> SlotWidgets;
+
+	UPROPERTY()
+	TArray<FBRInventorySlot> CachedSlots;
+
+	UPROPERTY()
+	TArray<int32> FilteredSlotIndices;
+
+	UPROPERTY()
+	TArray<TObjectPtr<UButton>> TabButtons;
+
+	UPROPERTY()
+	TArray<TObjectPtr<UTextBlock>> TabTexts;
 
 	UPROPERTY()
 	TObjectPtr<UTextBlock> ItemNameText;
@@ -57,7 +103,10 @@ private:
 	UPROPERTY()
 	TObjectPtr<UTextBlock> ItemDescriptionText;
 
-	static constexpr int32 GeneralSlotCount = 20;
-	static constexpr int32 HotbarSlotStartIndex = 20;
-	static constexpr int32 HotbarSlotCount = 3;
+	UPROPERTY()
+	TObjectPtr<UTextBlock> InventoryCountText;
+
+	EBRInventoryTab ActiveTab = EBRInventoryTab::All;
+
+	static constexpr int32 DisplaySlotCount = 24;
 };

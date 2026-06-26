@@ -3,6 +3,7 @@
 #include "Player/Character/ExceptionCharacter.h"
 
 #include "BRCombatInterface.h"
+#include "BRPlayerGraveMarker.h"
 #include "Boss/Base/BRBossBase.h"
 #include "Animation/AnimInstance.h"
 #include "DrawDebugHelpers.h"
@@ -206,6 +207,7 @@ float AExceptionCharacter::TakeDamage(float Damage, FDamageEvent const& DamageEv
 		ClearLockOn();
 		SetCombatState(EBRPlayerCombatState::Dead);
 		GetCharacterMovement()->DisableMovement();
+		SpawnPlayerGraveMarker();
 		GetWorldTimerManager().SetTimer(RespawnTimerHandle, this, &AExceptionCharacter::RespawnAtCheckpoint, RespawnDelay, false);
 		return Damage;
 	}

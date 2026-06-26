@@ -44,7 +44,7 @@ void UBRBossStatusWidget::SetBossHP(int32 BossIndex, FText BossName, float Curre
 	SetNamedProgress(TEXT("HPBar"), BossIndex, ClampedHP);
 	if (UProgressBar* HPBar = Cast<UProgressBar>(FindIndexedWidget(TEXT("HPBar"), BossIndex)))
 	{
-		FProgressBarStyle Style = HPBar->WidgetStyle;
+		FProgressBarStyle Style = HPBar->GetWidgetStyle();
 		Style.BackgroundImage.TintColor = FSlateColor(FLinearColor(0.025f, 0.025f, 0.025f, 0.92f));
 		Style.FillImage.TintColor = FSlateColor(FLinearColor(0.86f, 0.0f, 0.08f, 1.0f));
 		HPBar->SetWidgetStyle(Style);
@@ -59,7 +59,7 @@ void UBRBossStatusWidget::SetBossGroggy(int32 BossIndex, float CurrentGroggy, fl
 	SetNamedProgress(TEXT("GroggyBar"), BossIndex, ClampedGroggy);
 	if (UProgressBar* GroggyBar = Cast<UProgressBar>(FindIndexedWidget(TEXT("GroggyBar"), BossIndex)))
 	{
-		FProgressBarStyle Style = GroggyBar->WidgetStyle;
+		FProgressBarStyle Style = GroggyBar->GetWidgetStyle();
 		Style.BackgroundImage.TintColor = FSlateColor(FLinearColor(0.015f, 0.018f, 0.02f, 0.9f));
 		Style.FillImage.TintColor = FSlateColor(FLinearColor(0.68f, 0.9f, 1.0f, 1.0f));
 		GroggyBar->SetWidgetStyle(Style);

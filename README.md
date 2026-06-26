@@ -81,12 +81,15 @@ Unreal Engine 5.8 기반의 보스 레이드 액션 RPG 데모입니다.
 
 - 이동 / 카메라 조작
 - HP / Stamina 관리
+- 경험치 보유 / 소비 / 저장
 - 스태미나 소모 및 자동 회복
 - 약공격 / 강공격
 - 회피 및 무적 시간
 - 패링 및 패링 성공 시 보스 Groggy 증가
 - 공격 판정용 Sphere Sweep
 - 피격 / 사망 / 체크포인트 리스폰
+- 사망 위치에 플레이어 무덤 생성
+- 무덤 회수 시 사망 때 드롭된 미사용 경험치 복구
 - 락온 카메라
 - 보스 Groggy 상태에서 처형
 - 주요 수치 변수 주석 정리
@@ -109,6 +112,15 @@ Unreal Engine 5.8 기반의 보스 레이드 액션 RPG 데모입니다.
 - Static Mesh / Skeletal Mesh 보스 외형 선택 지원
 - 보스 사망 시 게이트/보상 액터 처리
 
+### 필드 몬스터 / 성장
+
+- 일반 필드 몬스터 스폰 배치
+- 일반 몬스터 피격 시 짧은 경직 적용
+- 공격 중 피격되면 공격 취소 후 경직
+- 일반 몬스터 처치 시 경험치 지급
+- 체크포인트 휴식 메뉴에서 원하는 스탯 직접 레벨업
+- 레벨업에 사용한 경험치는 유지되고, 사망 시 남은 경험치만 드롭
+
 ### UI
 
 - C++ 플레이어 HUD
@@ -122,9 +134,12 @@ Unreal Engine 5.8 기반의 보스 레이드 액션 RPG 데모입니다.
 - C++ Pause Menu
   - Resume
   - Level Up
+  - Inventory
   - Save Game
   - Return To Title
   - Quit Game
+- 체크포인트 휴식 시 Pause Menu 기반 휴식 메뉴 표시
+- 현재 경험치 / 다음 레벨업 비용 / 드롭 경험치 표시
 - Title Menu 자동 표시
 - 타이틀 → Continue → 필드 복귀 시 입력 모드 복구
 
@@ -137,11 +152,15 @@ Unreal Engine 5.8 기반의 보스 레이드 액션 RPG 데모입니다.
 - 인벤토리 슬롯 저장
 - 메뉴 수동 저장 시 현재 위치를 재시작 위치로 저장
 - 체크포인트 활성화 시 자동 저장
+- 현재 경험치 / 드롭 경험치 저장
+- 레벨업한 스탯은 사망해도 유지
 
 ### 인벤토리
 
 - 슬롯 기반 인벤토리 컴포넌트
 - C++ 인벤토리 UI
+- 장비 / 소모품 / 중요 / 퀘스트 / 재료 탭 분류
+- 좌측 목록 + 우측 상세 정보 구조
 - 아이템 추가 / 제거
 - 슬롯 이동
 - 사용 가능 아이템 처리
@@ -153,10 +172,15 @@ Unreal Engine 5.8 기반의 보스 레이드 액션 RPG 데모입니다.
 - `L_Title`
 - `L_Runtime_Prototype`
 - `L_Runtime_Field`
+- `L_Runtime_Field`를 현재 테스트 기본 실행 맵으로 설정
 - `WBP_TitleMenu`
 - `WBP_PlayerHUD`
 - `WBP_BossStatusHUD`
 - `WBP_PauseMenu`
+- Python / Vritra / Selvara / CMD 보스방 2.5배 확장 배치
+- CMD 왕좌, 보스방 안개문, 히든 무기 제단, 플레이어 무덤, Runtime Flask, Nel 기억 파편, 상징 나무, 체크포인트 에셋 배치
+- 기본 필드 바닥, Python 보스방 바닥, Vritra 보스방 바닥, CMD 보스방 바닥, 기본 복도 벽, CMD 보스방 벽 머티리얼 적용
+- 임포트 에셋 코드명 정리: `SM_`, `M_`, `T_` 접두사 기반
 
 ## 입력
 
@@ -228,6 +252,12 @@ Source/Exception/World/BRBossArenaTrigger.*
 Source/Exception/World/BRCheckpoint.*
 체크포인트 활성화, 회복, 자동 저장
 
+Source/Exception/World/BRPlayerGraveMarker.*
+사망 위치 무덤 생성, 드롭 경험치 회수
+
+Source/Exception/World/BRHiddenWeaponAltar.*
+히든 무기 제단, 히든 무기 지급
+
 Source/Exception/Inventory/BRInventoryComponent.*
 슬롯 기반 인벤토리
 
@@ -245,6 +275,18 @@ ESC 메뉴 / 레벨업 UI
 
 Source/Exception/UI/BRInventoryWidget.*
 C++ 인벤토리 UI
+
+Scripts/BuildDemoRuntimeField.py
+데모 필드 / 보스방 / 스포너 자동 배치
+
+Scripts/SetupImportedDemoAssets.py
+임포트 에셋 코드명 정리 및 데모 오브젝트 배치
+
+Scripts/ApplyDemoEnvironmentMaterials.py
+바닥 / 벽 PNG 텍스처를 머티리얼로 변환 후 적용
+
+Scripts/ForceApplyDemoMeshesAndMaterials.py
+맵 액터의 Static Mesh / Material 강제 적용 및 감사 보정
 ```
 
 ## 사용 기술
@@ -293,17 +335,27 @@ Unreal 프로젝트 특성상 자동 생성 파일과 캐시 파일은 Git에서
 
 `.uasset`, `.umap`, 이미지, 사운드 같은 바이너리 에셋은 Git LFS로 관리합니다.
 
+## 현재 검증 상태
+
+- `ExceptionEditor Win64 Development` C++ 빌드 성공
+- `CompileAllBlueprints -ProjectOnly` 결과: 0 errors, 0 failed load
+- `BP_CheckpointBonfire`의 Material/MaterialInstance class mismatch 경고는 남아 있으나 실행 차단 이슈는 아님
+- 깨진 구형 `WBP_Inventory` 블루프린트 제거
+- 제출 화면에 노출되던 전투/보스 디버그 렌더 기본값 비활성화
+- UE 5.8 include order 및 StateTree 인스턴스 데이터 매크로 업데이트
+- `AuditDemoActors.py`로 핵심 데모 액터의 Static Mesh / Material 적용 확인
+- `L_Runtime_Field` 기본 실행 맵 설정 확인
+
 ## 다음 개발 목표
 
-1. `L_Runtime_Field` 필드 동선 블록아웃 마감
-2. Python 듀얼 보스 패턴 밸런싱
-3. Vritra 블루프린트 메시/애니메이션/스케일 조정
-4. Vritra 보스방 트리거와 체력바 최종 확인
-5. CMD 최종 보스 기획/패턴 클래스 추가
-6. 아이템 효과 및 보스 보상 연결
-7. BGM / SFX 적용
-8. 보스 처치 후 보상 및 다음 구역 개방 처리
-9. 패키징 테스트
+1. `L_Runtime_Field`에서 시작 지점 -> 보스방 -> 클리어까지 3~5분 시연 동선 고정
+2. CMD 최종 보스 스폰, 체력바, 페이즈 전환, 클리어 조건을 에디터 PIE에서 최종 확인
+3. Python 듀얼 보스와 Vritra는 제출 영상에 넣을 범위만 밸런싱
+4. 보스 처치 후 보상/게이트/다음 구역 개방 흐름을 한 화면에서 이해되게 정리
+5. 타이틀 -> Continue -> 필드 복귀, 체크포인트 저장/로드, 리스폰 재도전 확인
+6. BGM/SFX/VFX는 핵심 전투 피드백 위주로 최소 적용
+7. Windows 패키징 테스트 후 다른 PC 실행 확인
+8. 제출 영상, 코드 설명 문서, 면접 예상 질문 정리
 
 ## 개발 기록
 
@@ -325,3 +377,11 @@ Unreal 프로젝트 특성상 자동 생성 파일과 캐시 파일은 Git에서
 - 보스 클래스 기능별 폴더 분리
 - 보스 트리거 클래스 스폰 및 단일 보스 체력바 관리 개선
 - 보스 기본 더미 큐브 제거 및 Skeletal Mesh 외형 지원
+- CMD 최종 보스 C++ 클래스와 패턴 데이터 추가
+- 숨겨진 스토리 조각 / Nel 요청 / 히든 무기 루트 추가
+- C++ 인벤토리 UI 기본 사용으로 정리
+- 제출용 검증: C++ 빌드 및 전체 블루프린트 컴파일 통과
+- 체크포인트 휴식 메뉴, 직접 스탯 레벨업, 경험치 소비 구조 추가
+- 사망 시 미사용 경험치 드롭 및 플레이어 무덤 회수 구조 추가
+- 일반 필드 몬스터 피격 경직 / 공격 취소 / 경험치 보상 추가
+- 임포트 에셋 이름 정리, Static Mesh / Material 데모 배치, 바닥/벽 텍스처 적용

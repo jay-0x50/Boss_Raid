@@ -2,6 +2,7 @@
 
 #include "BRSaveGameSubsystem.h"
 #include "Player/Character/ExceptionCharacter.h"
+#include "Player/Controller/ExceptionPlayerController.h"
 #include "ExceptionGameMode.h"
 #include "Components/SphereComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -76,5 +77,10 @@ void ABRCheckpoint::OnActivationBeginOverlap(UPrimitiveComponent* OverlappedComp
 	if (GEngine)
 	{
 		GEngine->AddOnScreenDebugMessage(3001, 1.5f, FColor::Green, TEXT("Checkpoint Activated"));
+	}
+
+	if (AExceptionPlayerController* PlayerController = Cast<AExceptionPlayerController>(PlayerCharacter->GetController()))
+	{
+		PlayerController->ShowPauseMenuWidget();
 	}
 }

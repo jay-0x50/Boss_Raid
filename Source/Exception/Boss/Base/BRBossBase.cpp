@@ -6,6 +6,7 @@
 #include "Components/SceneComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Animation/AnimationAsset.h"
 #include "Engine/World.h"
 
 ABRBossBase::ABRBossBase()
@@ -169,8 +170,49 @@ void ABRBossBase::SetBossAnimationPlaying(bool bShouldPlay)
 	SkeletalMeshComponent->SetPosition(0.0f, false);
 }
 
+void ABRBossBase::PlayBossStageAnimation(EBRBossAnimationStage Stage, FName ActionName)
+{
+	if (!SkeletalMeshComponent || SkeletalMeshComponent->GetAnimationMode() != EAnimationMode::AnimationSingleNode)
+	{
+		return;
+	}
+
+	UAnimationAsset* AnimationToPlay = nullptr;
+	if (!ActionName.IsNone())
+	{
+		if (const TObjectPtr<UAnimationAsset>* FoundAnimation = ActionAnimations.Find(ActionName))
+		{
+			AnimationToPlay = FoundAnimation->Get();
+		}
+	}
+
+	if (!AnimationToPlay)
+	{
+		if (const TObjectPtr<UAnimationAsset>* FoundAnimation = StageAnimations.Find(Stage))
+		{
+			AnimationToPlay = FoundAnimation->Get();
+		}
+	}
+
+	if (!AnimationToPlay)
+	{
+		return;
+	}
+
+	const bool bLoopAnimation = Stage == EBRBossAnimationStage::Idle || Stage == EBRBossAnimationStage::Move || Stage == EBRBossAnimationStage::Groggy;
+	if (CurrentBossAnimationAsset == AnimationToPlay && bLoopAnimation)
+	{
+		return;
+	}
+
+	SkeletalMeshComponent->SetAnimation(AnimationToPlay);
+	SkeletalMeshComponent->Play(bLoopAnimation);
+	CurrentBossAnimationAsset = AnimationToPlay;
+}
+
 void ABRBossBase::NotifyBossAnimationStage(EBRBossAnimationStage Stage, FName ActionName)
 {
+	PlayBossStageAnimation(Stage, ActionName);
 	OnAnimationStageChanged.Broadcast(Stage, ActionName);
 	BP_BossAnimationStageChanged(Stage, ActionName);
 }

@@ -11,17 +11,17 @@ ABRCMDBoss::ABRCMDBoss()
 	GroggyDuration = 3.0f;
 	Phase2StartHPRatio = 0.45f;
 	DetectionRange = 2800.0f;
-	MoveSpeed = 145.0f;
+	MoveSpeed = 260.0f;
 	Phase2MoveSpeedMultiplier = 1.18f;
 	Phase2CooldownMultiplier = 0.62f;
-	RotationInterpSpeed = 0.0f;
-	MeleeStandbyDistance = 360.0f;
+	RotationInterpSpeed = 8.0f;
+	MeleeStandbyDistance = 420.0f;
 	RangedStandbyDistance = 1200.0f;
 	RangedComfortMinDistance = 700.0f;
 	VisualMeshType = EBRBossVisualMeshType::SkeletalMesh;
-	MeshRelativeLocation = FVector(0.0f, 0.0f, -100.0f);
+	MeshRelativeLocation = FVector(0.0f, 0.0f, -90.0f);
 	MeshRelativeRotation = FRotator::ZeroRotator;
-	MeshRelativeScale = FVector(100.0f, 100.0f, 100.0f);
+	MeshRelativeScale = FVector(1.0f, 1.0f, 1.0f);
 	GroundTraceActorHalfHeight = 170.0f;
 
 	ConfigureCMDPatterns();
@@ -56,7 +56,7 @@ void ABRCMDBoss::OnBossDeadInternal()
 	if (GEngine)
 	{
 		const TCHAR* EndingText = Ending == EBRRuntimeEnding::HiddenAuthoritySeized
-			? TEXT("Hidden Ending: Handel seized CMD root authority.")
+			? TEXT("Hidden Ending: Hendel seized CMD root authority.")
 			: TEXT("Basic Ending: CMD defeated.");
 		GEngine->AddOnScreenDebugMessage(2051, 6.0f, FColor::Purple, EndingText);
 	}
