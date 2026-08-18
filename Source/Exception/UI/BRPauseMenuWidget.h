@@ -44,6 +44,7 @@ private:
 	void HandleQuitClicked();
 
 	void BuildMenuWidget();
+	void BindDesignerWidgets();
 	class UButton* AddMenuButton(class UVerticalBox* ParentBox, const FText& Label);
 
 	UPROPERTY()

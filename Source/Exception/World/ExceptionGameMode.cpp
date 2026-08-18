@@ -4,10 +4,12 @@
 
 #include "BRBossArenaTrigger.h"
 #include "BRSaveGameSubsystem.h"
+#include "Variant_Combat/AI/CombatEnemySpawner.h"
 #include "Player/Character/ExceptionCharacter.h"
 #include "Player/Controller/ExceptionPlayerController.h"
 #include "UObject/ConstructorHelpers.h"
 #include "TimerManager.h"
+#include "EngineUtils.h"
 
 AExceptionGameMode::AExceptionGameMode()
 {
@@ -65,5 +67,15 @@ void AExceptionGameMode::ResetActiveBossArenaForRetry()
 	if (ActiveBossArena)
 	{
 		ActiveBossArena->ResetArenaForRetry();
+	}
+
+	// Field encounters follow the same retry boundary as the active boss arena.
+	// Auto-spawners re-arm their distance check; trigger-driven spawners stay dormant.
+	if (UWorld* World = GetWorld())
+	{
+		for (TActorIterator<ACombatEnemySpawner> SpawnerIt(World); SpawnerIt; ++SpawnerIt)
+		{
+			SpawnerIt->ResetEncounter(false);
+		}
 	}
 }

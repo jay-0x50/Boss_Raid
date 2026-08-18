@@ -44,11 +44,12 @@ protected:
 
 private:
 	void BuildInventoryWidget();
+	void BindDesignerWidgets();
 	void BuildInventorySlots(UUniformGridPanel* SlotGrid);
-	void RebuildFilteredSlots();
+	void RefreshSlotList();
 	void SetActiveTab(EBRInventoryTab NewTab);
 	bool DoesSlotMatchTab(const FBRInventorySlot& InventorySlot) const;
-	EBRInventoryItemCategory GetResolvedCategory(const FBRInventorySlot& InventorySlot) const;
+	EBRInventoryItemCategory GetItemType(const FBRInventorySlot& InventorySlot) const;
 	FText GetTabText(EBRInventoryTab Tab) const;
 	FString GetCategoryDisplayName(EBRInventoryItemCategory Category) const;
 	void UpdateDetailsPanel(const FBRInventorySlot& InventorySlot);
@@ -75,6 +76,9 @@ private:
 
 	UPROPERTY()
 	TObjectPtr<UBRInventoryComponent> InventoryComponent;
+
+	UPROPERTY(EditDefaultsOnly, Category="Exception|Inventory")
+	TSubclassOf<UBRInventorySlotWidget> SlotWidgetClass;
 
 	UPROPERTY()
 	TArray<TObjectPtr<UBRInventorySlotWidget>> SlotWidgets;

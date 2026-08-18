@@ -43,7 +43,7 @@ void ABRBossBase::ApplyTeamSlot(int32 TeamSlotIndex)
 
 bool ABRBossBase::CanBeExecuted() const
 {
-	return bIsGroggy && !bIsDead && !bIsBeingExecuted;
+	return bIsGroggy && !bIsDead && !bIsBeingExecuted && !bIsPhaseTransitioning;
 }
 
 bool ABRBossBase::BeginExecution(AActor* Executor)
@@ -58,7 +58,7 @@ bool ABRBossBase::BeginExecution(AActor* Executor)
 	ClearBaseTimers();
 	OnExecutionStarted.Broadcast(Executor);
 
-	if (GEngine)
+	if (bShowDebug && GEngine)
 	{
 		GEngine->AddOnScreenDebugMessage(2009, 1.5f, FColor::Purple, TEXT("Execution Started"));
 	}
@@ -76,17 +76,28 @@ bool ABRBossBase::CompleteExecution(float Damage, AActor* Executor)
 	bIsBeingExecuted = false;
 	LastDamageCauser = Executor;
 	const bool bApplied = StatComponent->ApplyDamageToStats(Damage, 0.0f);
+	if (bApplied)
+	{
+		StartProceduralHitReaction(Executor);
+		PlayCameraFeedbackForActor(Executor, 1.25f, 0.5f);
+	}
 	RefreshPhaseByHP();
 
 	if (!bIsDead)
 	{
 		bIsGroggy = false;
 		StatComponent->ResetGroggy();
+		if (!bIsPhaseTransitioning)
+		{
+			NotifyBossAnimationStage(EBRBossAnimationStage::Idle);
+			OnBossRecoveredFromGroggy.Broadcast();
+			OnBossRecoveredFromGroggyInternal();
+		}
 	}
 
 	OnExecutionCompleted.Broadcast(Executor);
 
-	if (GEngine)
+	if (bShowDebug && GEngine)
 	{
 		const FString ExecutionText = FString::Printf(TEXT("Execution Hit! -%.0f HP"), Damage);
 		GEngine->AddOnScreenDebugMessage(2010, 1.5f, FColor::Purple, ExecutionText);

@@ -300,15 +300,27 @@ EStateTreeRunStatus FStateTreeGetPlayerInfoTask::Tick(FStateTreeExecutionContext
 {
 	// get the instance data
 	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	if (!InstanceData.Character)
+	{
+		InstanceData.TargetPlayerCharacter = nullptr;
+		InstanceData.DistanceToTarget = 0.0f;
+		return EStateTreeRunStatus::Running;
+	}
 
 	// get the character possessed by the first local player
-	InstanceData.TargetPlayerCharacter = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(InstanceData.Character, 0));
-
-	// do we have a valid target?
-	if (InstanceData.TargetPlayerCharacter)
+	ACharacter* PlayerCharacter = Cast<ACharacter>(UGameplayStatics::GetPlayerPawn(InstanceData.Character, 0));
+	if (ACombatEnemy* Enemy = Cast<ACombatEnemy>(InstanceData.Character))
 	{
-		// update the last known location
-		InstanceData.TargetPlayerLocation = InstanceData.TargetPlayerCharacter->GetActorLocation();
+		InstanceData.TargetPlayerCharacter = Enemy->ShouldTargetPlayer(PlayerCharacter) ? PlayerCharacter : nullptr;
+		InstanceData.TargetPlayerLocation = InstanceData.TargetPlayerCharacter ? PlayerCharacter->GetActorLocation() : Enemy->GetHomeLocation();
+	}
+	else
+	{
+		InstanceData.TargetPlayerCharacter = PlayerCharacter;
+		if (PlayerCharacter)
+		{
+			InstanceData.TargetPlayerLocation = PlayerCharacter->GetActorLocation();
+		}
 	}
 
 	// update the distance

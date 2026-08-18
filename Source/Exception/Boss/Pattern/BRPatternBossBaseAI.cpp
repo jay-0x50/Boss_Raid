@@ -5,7 +5,7 @@
 
 void ABRPatternBossBase::UpdateBossAI(float DeltaSeconds)
 {
-	if (!bCombatAIEnabled || bIsDead || bIsGroggy || bIsAttacking || bIsBeingExecuted)
+	if (!bCombatAIEnabled || bIsDead || bIsGroggy || bIsAttacking || bIsBeingExecuted || bIsPhaseTransitioning)
 	{
 		return;
 	}
@@ -23,10 +23,21 @@ void ABRPatternBossBase::UpdateBossAI(float DeltaSeconds)
 	const float DistanceToTarget = FVector::Dist(GetActorLocation(), CurrentTarget->GetActorLocation());
 	if (DistanceToTarget > DetectionRange)
 	{
+		if (CurrentAnimationStage != EBRBossAnimationStage::Idle)
+		{
+			NotifyBossAnimationStage(EBRBossAnimationStage::Idle);
+		}
 		return;
 	}
 
 	FaceTarget(DeltaSeconds);
+
+	const int32 PatternIndex = SelectPattern(DistanceToTarget);
+	if (PatternIndex != INDEX_NONE)
+	{
+		StartBossAttack(PatternIndex);
+		return;
+	}
 
 	if (IsTeamMateAttacking())
 	{
@@ -43,13 +54,6 @@ void ABRPatternBossBase::UpdateBossAI(float DeltaSeconds)
 	if (TeamRole != EBRBossTeamRole::Ranged && DistanceToTarget > MeleeStandbyDistance)
 	{
 		MoveTowardTarget(DeltaSeconds);
-		return;
-	}
-
-	const int32 PatternIndex = SelectPattern(DistanceToTarget);
-	if (PatternIndex != INDEX_NONE)
-	{
-		StartBossAttack(PatternIndex);
 		return;
 	}
 
@@ -99,6 +103,10 @@ void ABRPatternBossBase::MoveTowardTarget(float DeltaSeconds)
 
 	if (ToTarget.Size2D() <= MeleeStandbyDistance)
 	{
+		if (CurrentAnimationStage != EBRBossAnimationStage::Idle)
+		{
+			NotifyBossAnimationStage(EBRBossAnimationStage::Idle);
+		}
 		return;
 	}
 
@@ -117,6 +125,10 @@ void ABRPatternBossBase::MoveToTeamStandbyDistance(float DeltaSeconds, float Cur
 	const float DistanceTolerance = 80.0f;
 	if (FMath::Abs(CurrentDistanceToTarget - DesiredDistance) <= DistanceTolerance)
 	{
+		if (CurrentAnimationStage != EBRBossAnimationStage::Idle)
+		{
+			NotifyBossAnimationStage(EBRBossAnimationStage::Idle);
+		}
 		return;
 	}
 

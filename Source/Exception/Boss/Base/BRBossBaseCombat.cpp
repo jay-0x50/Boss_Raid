@@ -13,18 +13,21 @@ float ABRBossBase::TakeDamage(float Damage, FDamageEvent const& DamageEvent, ACo
 
 bool ABRBossBase::ReceiveCombatHit_Implementation(float Damage, float GroggyDamage, AActor* DamageCauser)
 {
-	if (!StatComponent || bIsDead || Damage <= 0.0f)
+	if (!StatComponent || bIsDead || Damage <= 0.0f || (bIsPhaseTransitioning && bInvulnerableDuringPhaseTransition))
 	{
 		return false;
 	}
 
+	// OnDead is broadcast inside ApplyDamageToStats, so save the attacker first.
+	LastDamageCauser = DamageCauser;
 	const bool bApplied = StatComponent->ApplyDamageToStats(Damage, GroggyDamage);
 	if (!bApplied)
 	{
 		return false;
 	}
 
-	LastDamageCauser = DamageCauser;
+	StartProceduralHitReaction(DamageCauser);
+	PlayCameraFeedbackForActor(DamageCauser, BossReceivedHitCameraShakeScale, BossReceivedHitRumbleIntensity);
 	RefreshPhaseByHP();
 
 	UE_LOG(LogTemp, Log, TEXT("%s hit: Damage=%.1f, GroggyDamage=%.1f, HP=%.1f/%.1f, Groggy=%.1f/%.1f"),
@@ -36,7 +39,7 @@ bool ABRBossBase::ReceiveCombatHit_Implementation(float Damage, float GroggyDama
 		StatComponent->GetCurrentGroggy(),
 		StatComponent->GetMaxGroggy());
 
-	if (GEngine)
+	if (bShowDebug && GEngine)
 	{
 		const FString HitText = FString::Printf(TEXT("%s Hit! -%.0f HP / +%.0f Groggy"), *GetBossDebugName(), Damage, GroggyDamage);
 		GEngine->AddOnScreenDebugMessage(2002, 1.0f, FColor::Yellow, HitText);
@@ -56,8 +59,10 @@ void ABRBossBase::ResetBoss()
 	bIsGroggy = false;
 	bIsAttacking = false;
 	bIsBeingExecuted = false;
+	bIsPhaseTransitioning = false;
 	LastDamageCauser = nullptr;
 	VerticalFallSpeed = 0.0f;
+	ProceduralHitReactionTime = 0.0f;
 	BossPhase = EBRBossPhase::Phase1;
 	ClearBaseTimers();
 
@@ -75,6 +80,12 @@ void ABRBossBase::ResetBoss()
 
 void ABRBossBase::SetCombatAIEnabled(bool bEnabled)
 {
+	if (!bEnabled)
+	{
+		ClearBaseTimers();
+		bIsPhaseTransitioning = false;
+	}
+
 	bCombatAIEnabled = bEnabled;
 	bIsAttacking = false;
 	SetBossAnimationPlaying(bCombatAIEnabled && !bIsDead);
@@ -86,7 +97,7 @@ void ABRBossBase::SetCombatAIEnabled(bool bEnabled)
 		BossAIController->SetBossAIEnabled(bCombatAIEnabled);
 	}
 
-	if (GEngine)
+	if (bShowDebug && GEngine)
 	{
 		GEngine->AddOnScreenDebugMessage(
 			2005,
@@ -98,9 +109,11 @@ void ABRBossBase::SetCombatAIEnabled(bool bEnabled)
 
 void ABRBossBase::PrepareForArenaInactive()
 {
+	ClearBaseTimers();
 	bCombatAIEnabled = false;
 	bIsAttacking = false;
 	bIsBeingExecuted = false;
+	bIsPhaseTransitioning = false;
 	VerticalFallSpeed = 0.0f;
 
 	SetBossAnimationPlaying(false);
@@ -167,7 +180,7 @@ ABRBossAIController* ABRBossBase::GetBossAIController() const
 
 bool ABRBossBase::ApplyGroggyDamage(float GroggyDamage, AActor* DamageCauser)
 {
-	if (!StatComponent || bIsDead || bIsGroggy || GroggyDamage <= 0.0f)
+	if (!StatComponent || bIsDead || bIsGroggy || bIsPhaseTransitioning || GroggyDamage <= 0.0f)
 	{
 		return false;
 	}
@@ -178,7 +191,10 @@ bool ABRBossBase::ApplyGroggyDamage(float GroggyDamage, AActor* DamageCauser)
 		return false;
 	}
 
-	if (GEngine)
+	StartProceduralHitReaction(DamageCauser);
+	PlayCameraFeedbackForActor(DamageCauser, 0.75f, 0.45f);
+
+	if (bShowDebug && GEngine)
 	{
 		const FString GroggyText = FString::Printf(TEXT("%s Parried! +%.0f Groggy"), *GetBossDebugName(), GroggyDamage);
 		GEngine->AddOnScreenDebugMessage(2013, 1.2f, FColor::Cyan, GroggyText);
@@ -193,8 +209,13 @@ void ABRBossBase::HandleDead()
 	bCombatAIEnabled = false;
 	bIsAttacking = false;
 	bIsBeingExecuted = false;
+	bIsPhaseTransitioning = false;
 	ClearBaseTimers();
 	NotifyCoordinatedAttackFinished();
+	if (ABRBossAIController* BossAIController = GetBossAIController())
+	{
+		BossAIController->StopMovement();
+	}
 	SetActorEnableCollision(false);
 	SetBossAnimationPlaying(false);
 	NotifyBossAnimationStage(EBRBossAnimationStage::Death);
@@ -206,7 +227,7 @@ void ABRBossBase::HandleDead()
 		RewardCharacter->AwardBossVictoryRewards(this);
 	}
 
-	if (GEngine)
+	if (bShowDebug && GEngine)
 	{
 		GEngine->AddOnScreenDebugMessage(2003, 2.0f, FColor::Red, TEXT("Boss Dead"));
 	}
@@ -214,15 +235,28 @@ void ABRBossBase::HandleDead()
 
 void ABRBossBase::HandleGroggy()
 {
+	if (bIsPhaseTransitioning)
+	{
+		if (StatComponent)
+		{
+			StatComponent->ResetGroggy();
+		}
+		return;
+	}
+
 	bIsGroggy = true;
 	bIsAttacking = false;
 	ClearBaseTimers();
+	if (ABRBossAIController* BossAIController = GetBossAIController())
+	{
+		BossAIController->StopMovement();
+	}
 	NotifyBossAnimationStage(EBRBossAnimationStage::Groggy);
 	OnBossGroggy.Broadcast();
 	OnBossGroggyInternal();
 	GetWorldTimerManager().SetTimer(GroggyTimerHandle, this, &ABRBossBase::RecoverFromGroggy, GroggyDuration, false);
 
-	if (GEngine)
+	if (bShowDebug && GEngine)
 	{
 		GEngine->AddOnScreenDebugMessage(2004, 2.0f, FColor::Orange, TEXT("Boss Groggy"));
 	}
@@ -240,7 +274,7 @@ void ABRBossBase::HandleGroggyChanged(float CurrentValue, float MaxValue, float 
 
 void ABRBossBase::RecoverFromGroggy()
 {
-	if (bIsDead)
+	if (bIsDead || bIsPhaseTransitioning || !bIsGroggy)
 	{
 		return;
 	}
@@ -262,7 +296,7 @@ void ABRBossBase::RecoverFromGroggy()
 	OnBossRecoveredFromGroggy.Broadcast();
 	OnBossRecoveredFromGroggyInternal();
 
-	if (GEngine)
+	if (bShowDebug && GEngine)
 	{
 		GEngine->AddOnScreenDebugMessage(2008, 1.5f, FColor::Silver, TEXT("Boss Recovered From Groggy"));
 	}
@@ -278,12 +312,74 @@ void ABRBossBase::RefreshPhaseByHP()
 	if (GetHPPercent() <= Phase2StartHPRatio)
 	{
 		BossPhase = EBRBossPhase::Phase2;
+		BeginPhaseTransition();
 		OnPhaseChanged.Broadcast(BossPhase);
 		OnBossPhaseChanged(BossPhase);
 
-		if (GEngine)
+		if (bShowDebug && GEngine)
 		{
 			GEngine->AddOnScreenDebugMessage(2011, 2.0f, FColor::Orange, TEXT("Boss Phase 2"));
 		}
+	}
+}
+
+void ABRBossBase::BeginPhaseTransition()
+{
+	if (bIsDead || !bCombatAIEnabled)
+	{
+		return;
+	}
+
+	// A phase break owns the boss state. It cancels any windup/recovery and
+	// clears a groggy triggered by the same threshold-crossing hit.
+	ClearBaseTimers();
+	bIsBeingExecuted = false;
+	bIsGroggy = false;
+	bIsPhaseTransitioning = true;
+	bIsAttacking = true;
+	if (ABRBossAIController* BossAIController = GetBossAIController())
+	{
+		BossAIController->StopMovement();
+	}
+
+	if (StatComponent && StatComponent->IsGroggy())
+	{
+		StatComponent->ResetGroggy();
+	}
+
+	NotifyBossAnimationStage(EBRBossAnimationStage::PhaseTransition);
+	if (!bIsPhaseTransitioning || bIsDead || !bCombatAIEnabled)
+	{
+		return;
+	}
+
+	if (PhaseTransitionDuration <= KINDA_SMALL_NUMBER)
+	{
+		FinishPhaseTransition();
+		return;
+	}
+
+	GetWorldTimerManager().SetTimer(
+		PhaseTransitionTimerHandle,
+		this,
+		&ABRBossBase::FinishPhaseTransition,
+		PhaseTransitionDuration,
+		false);
+}
+
+void ABRBossBase::FinishPhaseTransition()
+{
+	GetWorldTimerManager().ClearTimer(PhaseTransitionTimerHandle);
+	if (!bIsPhaseTransitioning)
+	{
+		return;
+	}
+
+	bIsPhaseTransitioning = false;
+	bIsAttacking = false;
+	if (!bIsDead && bCombatAIEnabled)
+	{
+		NotifyBossAnimationStage(EBRBossAnimationStage::Idle);
+		OnPhaseTransitionFinished.Broadcast();
 	}
 }

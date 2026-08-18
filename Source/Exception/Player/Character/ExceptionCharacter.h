@@ -627,6 +627,8 @@ protected:
 	void PlayOptionalMontage(UAnimMontage* Montage);
 	void BroadcastHP();
 	void BroadcastStamina();
+	void SaveBaseStats();
+	void ApplyLevelStats();
 	void DrawCombatDebug() const;
 	FString GetCombatStateName() const;
 	void RegisterInitialCheckpoint();
@@ -638,8 +640,13 @@ protected:
 	void FinishExecution();
 	float GetEffectiveAttackDamage(float BaseDamage, AActor* TargetActor) const;
 
-	UFUNCTION()
-	void HandleInventoryItemUsed(int32 SlotIndex, const FBRInventorySlot& Slot);
+	float BaseMaxHP = 0.0f;
+	float BaseMaxStamina = 0.0f;
+	float BaseLightDamage = 0.0f;
+	float BaseHeavyDamage = 0.0f;
+	bool bBaseStatsSaved = false;
+
+	bool TryUseInventoryItem(int32 SlotIndex, const FBRInventorySlot& Slot);
 
 	FBRInventoryItemDefinition MakePotionItem() const;
 	FBRInventoryItemDefinition MakeStaminaItem() const;

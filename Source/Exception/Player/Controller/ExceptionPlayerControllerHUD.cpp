@@ -82,7 +82,7 @@ void AExceptionPlayerController::UnbindPlayerHUDFromPawn()
 	BoundHUDCharacter = nullptr;
 }
 
-void AExceptionPlayerController::UpdateRuntimeGauge(FName GaugeWidgetName, const FText& GaugeText, float NormalizedValue, const FLinearColor& GaugeColor)
+void AExceptionPlayerController::UpdateGauge(FName GaugeWidgetName, const FText& GaugeText, float NormalizedValue, const FLinearColor& GaugeColor)
 {
 	if (!PlayerHUDWidget || !PlayerHUDWidget->WidgetTree)
 	{
@@ -231,21 +231,21 @@ void AExceptionPlayerController::UpdateHPGauge(float CurrentValue, float MaxValu
 	const float ClampedValue = FMath::Clamp(NormalizedValue, 0.0f, 1.0f);
 	const int32 Percent = FMath::RoundToInt(ClampedValue * 100.0f);
 	FLinearColor HPColor(0.0f, 0.83f, 1.0f, 1.0f);
-	FString Status = TEXT("STABLE");
+	FString Status = TEXT("OK");
 
 	if (ClampedValue <= 0.3f)
 	{
 		HPColor = FLinearColor(1.0f, 0.18f, 0.33f, 1.0f);
-		Status = TEXT("CRITICAL_DANGER");
+		Status = TEXT("DANGER");
 	}
 	else if (ClampedValue <= 0.5f)
 	{
 		HPColor = FLinearColor(1.0f, 0.55f, 0.0f, 1.0f);
-		Status = TEXT("CRITICAL_WARNING");
+		Status = TEXT("LOW");
 	}
 
 	const FString HPValue = Percent >= 100 ? TEXT("FULL") : FString::Printf(TEXT("%d%%"), Percent);
-	UpdateRuntimeGauge(TEXT("HPGauge"), FText::FromString(FString::Printf(TEXT("[HP: %s // STATUS: %s]"), *HPValue, *Status)), ClampedValue, HPColor);
+	UpdateGauge(TEXT("HPGauge"), FText::FromString(FString::Printf(TEXT("HP %s  %s"), *HPValue, *Status)), ClampedValue, HPColor);
 }
 
 void AExceptionPlayerController::UpdateStaminaGauge(float CurrentValue, float MaxValue, float NormalizedValue)
@@ -274,10 +274,10 @@ void AExceptionPlayerController::UpdateStaminaGauge(float CurrentValue, float Ma
 	else if (ClampedValue < 1.0f)
 	{
 		StaminaColor = FLinearColor(1.0f, 0.86f, 0.18f, 1.0f);
-		Status = TEXT("DEPLETED_REFRESH");
+		Status = TEXT("USING");
 	}
 
-	UpdateRuntimeGauge(TEXT("StaminaGauge"), FText::FromString(FString::Printf(TEXT("[ST: %d%% // STATUS: %s]"), Percent, *Status)), ClampedValue, StaminaColor);
+	UpdateGauge(TEXT("StaminaGauge"), FText::FromString(FString::Printf(TEXT("ST %d%%  %s"), Percent, *Status)), ClampedValue, StaminaColor);
 }
 
 void AExceptionPlayerController::UpdateGroggyGauge(float NormalizedValue)
@@ -285,5 +285,5 @@ void AExceptionPlayerController::UpdateGroggyGauge(float NormalizedValue)
 	const float ClampedValue = FMath::Clamp(NormalizedValue, 0.0f, 1.0f);
 	const int32 GaugeValue = FMath::RoundToInt(ClampedValue * 100.0f);
 	const FString State = ClampedValue >= 1.0f ? TEXT("MAX") : ClampedValue >= 0.5f ? TEXT("HALF") : TEXT("EMPTY");
-	UpdateRuntimeGauge(TEXT("GroggyGauge"), FText::FromString(FString::Printf(TEXT("[GROGGY: %s // GAUGE: %03d]"), *State, GaugeValue)), ClampedValue, FLinearColor(1.0f, 0.9f, 0.0f, 1.0f));
+	UpdateGauge(TEXT("GroggyGauge"), FText::FromString(FString::Printf(TEXT("GROGGY %03d  %s"), GaugeValue, *State)), ClampedValue, FLinearColor(1.0f, 0.9f, 0.0f, 1.0f));
 }

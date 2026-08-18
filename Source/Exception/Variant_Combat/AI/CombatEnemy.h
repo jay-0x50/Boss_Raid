@@ -13,6 +13,9 @@
 class UWidgetComponent;
 class UCombatLifeBar;
 class UAnimMontage;
+class UStaticMesh;
+class UStaticMeshComponent;
+class ACombatEnemy;
 
 /** Completed attack animation delegate for StateTree */
 DECLARE_DELEGATE(FOnEnemyAttackCompleted);
@@ -22,6 +25,9 @@ DECLARE_DELEGATE(FOnEnemyLanded);
 
 /** Enemy died delegate */
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnEnemyDied);
+
+/** Native death delegate that identifies the enemy for encounter tracking */
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnEnemyDiedNative, ACombatEnemy*);
 
 /**
  *  An AI-controlled character with combat capabilities.
@@ -36,12 +42,60 @@ class ACombatEnemy : public ACharacter, public ICombatAttacker, public ICombatDa
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
 	UWidgetComponent* LifeBar;
 
+	/** Optional visual for lightweight non-skeletal field monsters */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
+	UStaticMeshComponent* FieldVisual;
+
 public:
 	
 	/** Constructor */
 	ACombatEnemy();
 
 protected:
+
+	/** Uses FieldVisual and hides the skeletal mesh; false preserves the original Manny enemy */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Field Monster", meta=(AllowPrivateAccess="true"))
+	bool bUseFieldVisual = false;
+
+	/** Soft default keeps the jelly asset unloaded for regular skeletal enemies */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Field Monster", meta=(EditCondition="bUseFieldVisual", AllowPrivateAccess="true"))
+	TSoftObjectPtr<UStaticMesh> FieldMonsterMesh;
+
+	/** Height of the procedural idle hop */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Field Monster|Motion", meta=(EditCondition="bUseFieldVisual", ClampMin="0.0", ClampMax="100.0", Units="cm", AllowPrivateAccess="true"))
+	float IdleHopHeight = 10.0f;
+
+	/** Number of procedural idle hops per second */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Field Monster|Motion", meta=(EditCondition="bUseFieldVisual", ClampMin="0.1", ClampMax="5.0", Units="Hz", AllowPrivateAccess="true"))
+	float IdleHopFrequency = 1.1f;
+
+	/** Duration of the safe attack used when an attack montage is missing */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Field Monster|Attack", meta=(ClampMin="0.15", ClampMax="3.0", Units="s", AllowPrivateAccess="true"))
+	float FallbackAttackDuration = 0.55f;
+
+	/** Normalized point in the fallback attack that performs its damage sweep */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Field Monster|Attack", meta=(ClampMin="0.05", ClampMax="0.95", AllowPrivateAccess="true"))
+	float FallbackAttackHitTime = 0.55f;
+
+	/** Forward visual lunge during the fallback attack */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Field Monster|Attack", meta=(EditCondition="bUseFieldVisual", ClampMin="0.0", ClampMax="300.0", Units="cm", AllowPrivateAccess="true"))
+	float FallbackAttackLunge = 75.0f;
+
+	/** Player distance that wakes this enemy */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Field Monster|AI", meta=(ClampMin="100.0", ClampMax="10000.0", Units="cm", AllowPrivateAccess="true"))
+	float AggroDistance = 1800.0f;
+
+	/** Player distance that makes an already-alert enemy lose interest */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Field Monster|AI", meta=(ClampMin="100.0", ClampMax="15000.0", Units="cm", AllowPrivateAccess="true"))
+	float LoseInterestDistance = 2800.0f;
+
+	/** Maximum distance this enemy may chase away from its spawn location */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Field Monster|AI", meta=(ClampMin="100.0", ClampMax="20000.0", Units="cm", AllowPrivateAccess="true"))
+	float MaxChaseDistanceFromHome = 3200.0f;
+
+	/** Direct movement speed used only by field visuals when path following cannot move */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Field Monster|AI", meta=(EditCondition="bUseFieldVisual", ClampMin="0.0", ClampMax="1200.0", Units="cm/s", AllowPrivateAccess="true"))
+	float DirectMoveFallbackSpeed = 260.0f;
 
 	/** Max amount of HP the character will have on respawn */
 	UPROPERTY(EditAnywhere, Category="Damage")
@@ -160,6 +214,33 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<AActor> LastDamageCauser;
 
+	/** Visual transform authored on the component before procedural offsets */
+	FTransform FieldVisualBaseTransform;
+
+	/** Location this enemy returns to after losing aggro */
+	FVector HomeLocation = FVector::ZeroVector;
+
+	/** Running time for the procedural field visual */
+	float FieldMotionTime = 0.0f;
+
+	/** Running time for a montage-free attack */
+	float FallbackAttackElapsed = 0.0f;
+
+	/** True while the montage-free attack animation is active */
+	bool bFallbackAttackPlaying = false;
+
+	/** Prevents more than one damage sweep per fallback attack */
+	bool bFallbackAttackHitDone = false;
+
+	/** True after the player has entered aggro range */
+	bool bHasAggro = false;
+
+	/** Tick state to restore after a non-field fallback attack */
+	bool bTickEnabledBeforeFallbackAttack = true;
+
+	/** Invalidates delayed completion callbacks when a newer attack starts */
+	uint32 AttackGeneration = 0;
+
 public:
 	/** Attack completed internal delegate to notify StateTree tasks */
 	FOnEnemyAttackCompleted OnAttackCompleted;
@@ -170,6 +251,9 @@ public:
 	/** Enemy died delegate. Allows external subscribers to respond to enemy death */
 	UPROPERTY(BlueprintAssignable, Category="Events")
 	FOnEnemyDied OnEnemyDied;
+
+	/** Native version used by spawners that need to identify which enemy died */
+	FOnEnemyDiedNative OnEnemyDiedNative;
 
 public:
 
@@ -187,6 +271,12 @@ public:
 
 	/** Returns the last game time we were attacked */
 	float GetLastDangerTime() const;
+
+	/** Updates aggro/leash state and reports whether StateTree should target this player */
+	bool ShouldTargetPlayer(const AActor* PlayerActor);
+
+	/** Spawn location used as the return target after aggro is lost */
+	const FVector& GetHomeLocation() const { return HomeLocation; }
 
 public:
 
@@ -222,6 +312,20 @@ public:
 	// ~end ICombatDamageable interface
 
 protected:
+	/** Starts a timed hop/lunge attack when a montage cannot be played */
+	void StartFallbackAttack();
+
+	/** Applies field visual motion and optional no-nav direct movement */
+	void UpdateFieldMonster(float DeltaSeconds);
+
+	/** Applies visibility and lazy-loads the optional field monster mesh */
+	void RefreshVisualMode();
+
+	/** Ends an active attack exactly once and wakes any waiting StateTree task */
+	void FinishAttack();
+
+	/** Wakes an attack task on the next frame when an attack asset is unavailable */
+	void FinishMissingAttack();
 
 	/** Removes this character from the level after it dies */
 	void RemoveFromLevel();
@@ -247,6 +351,12 @@ protected:
 
 	/** Gameplay initialization */
 	virtual void BeginPlay() override;
+
+	/** Updates the optional procedural field visual and attack fallback */
+	virtual void Tick(float DeltaSeconds) override;
+
+	/** Keeps the selected visual mode visible while editing derived Blueprints */
+	virtual void OnConstruction(const FTransform& Transform) override;
 
 	/** EndPlay cleanup */
 	virtual void EndPlay(EEndPlayReason::Type EndPlayReason) override;

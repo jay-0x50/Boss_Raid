@@ -4,6 +4,8 @@
 #include "Boss/Base/BRBossBase.h"
 #include "BRPatternBossBase.generated.h"
 
+class UNiagaraSystem;
+
 UENUM(BlueprintType)
 enum class EBRBossPatternType : uint8
 {
@@ -25,8 +27,30 @@ struct FBRBossPatternData
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation")
 	FName AnimationActionName = NAME_None;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Effects")
+	TObjectPtr<UNiagaraSystem> TelegraphEffect = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Effects")
+	TObjectPtr<UNiagaraSystem> ImpactEffect = nullptr;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Effects")
+	FName TelegraphSocketName = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Effects")
+	FName ImpactSocketName = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Effects")
+	FVector TelegraphEffectScale = FVector::OneVector;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Effects")
+	FVector ImpactEffectScale = FVector::OneVector;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Pattern")
 	EBRBossPatternType PatternType = EBRBossPatternType::Melee;
+
+	/** Keeps ranged zones fixed at the target's windup position so they can be dodged. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Pattern")
+	bool bCenterAOEOnTarget = false;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Pattern", meta=(ClampMin="0.0", Units="cm"))
 	float MinRange = 0.0f;
@@ -40,6 +64,12 @@ struct FBRBossPatternData
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Pattern", meta=(ClampMin="0.01", Units="s"))
 	float Windup = 0.65f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation", meta=(ClampMin="0.0", Units="s"))
+	float ImpactHoldTime = 0.2f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation", meta=(ClampMin="0.0", Units="s"))
+	float RecoveryTime = 0.45f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Pattern", meta=(ClampMin="0.01", Units="s"))
 	float Cooldown = 1.8f;
 
@@ -51,6 +81,18 @@ struct FBRBossPatternData
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Pattern", meta=(ClampMin="0.0", Units="cm"))
 	float DashDistance = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Feedback", meta=(ClampMin="0.0"))
+	float KnockbackStrength = 320.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Feedback", meta=(ClampMin="0.0"))
+	float KnockbackLift = 80.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Feedback", meta=(ClampMin="0.0"))
+	float CameraShakeScale = 1.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Feedback", meta=(ClampMin="0.0", ClampMax="1.0"))
+	float RumbleIntensity = 0.32f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Pattern")
 	bool bDashAwayFromTarget = false;
@@ -124,8 +166,35 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Team", meta=(ClampMin="0.0", Units="cm"))
 	float RangedComfortMinDistance = 480.0f;
 
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Exception|Effects|Fallback")
+	TObjectPtr<UNiagaraSystem> MeleeTelegraphEffect = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Exception|Effects|Fallback")
+	TObjectPtr<UNiagaraSystem> DashTelegraphEffect = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Exception|Effects|Fallback")
+	TObjectPtr<UNiagaraSystem> AOETelegraphEffect = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Exception|Effects|Fallback")
+	TObjectPtr<UNiagaraSystem> MeleeEffect = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Exception|Effects|Fallback")
+	TObjectPtr<UNiagaraSystem> DashEffect = nullptr;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Exception|Effects|Fallback")
+	TObjectPtr<UNiagaraSystem> AOEEffect = nullptr;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Pattern")
 	TArray<FBRBossPatternData> AttackPatterns;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Pattern", meta=(ClampMin="0.0", Units="s"))
+	float MinAttackGap = 0.8f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Phase", meta=(ClampMin="0.0"))
+	float PhaseTransitionEffectScale = 1.5f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Phase", meta=(ClampMin="0.0"))
+	float PhaseTransitionCameraShakeScale = 1.25f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Debug")
 	bool bDrawAttackDebug = false;
@@ -137,8 +206,20 @@ protected:
 	float TelegraphHeightOffset = 12.0f;
 
 	FTimerHandle AttackWindupTimerHandle;
+	FTimerHandle AttackRecoveryTimerHandle;
 	float LastAttackTime = -1000.0f;
+	float NextAttackTime = -1000.0f;
+	TMap<FName, float> LastPatternTimes;
 	int32 ActivePatternIndex = INDEX_NONE;
+	int32 LastPatternIndex = INDEX_NONE;
+	int32 AttackSequence = 0;
+	FBRBossPatternData ActivePatternSnapshot;
+	FVector LockedAttackOrigin = FVector::ZeroVector;
+	FVector LockedTargetLocation = FVector::ZeroVector;
+	FVector LockedAttackDirection = FVector::ForwardVector;
+	bool bHasActivePattern = false;
+	bool bAttackHasImpacted = false;
+	bool bAttackSlotClaimed = false;
 
 	void FaceTarget(float DeltaSeconds);
 	void MoveTowardTarget(float DeltaSeconds);
@@ -148,7 +229,18 @@ protected:
 	float GetPatternCooldown(const FBRBossPatternData& Pattern) const;
 	float GetCurrentMoveSpeed() const;
 	void StartBossAttack(int32 PatternIndex);
-	void PerformBossAttack();
+	void PerformBossAttack(int32 AttackId);
+	void BeginAttackRecovery(const FBRBossPatternData& Pattern, int32 AttackId);
+	void StartAttackRecovery(int32 AttackId);
+	void FinishBossAttack(int32 AttackId);
+	void CancelBossAttack();
+	void ReleaseAttackSlot();
+	void ApplyPatternHitFeedback(AActor* HitActor, const FBRBossPatternData& Pattern, const FVector& HitDirection);
+	FVector GetAOECenter(const FBRBossPatternData& Pattern, float HeightOffset) const;
+	FVector GetLockedDashDirection(const FBRBossPatternData& Pattern) const;
+	UNiagaraSystem* ResolvePatternEffect(const FBRBossPatternData& Pattern, bool bTelegraph) const;
+	FTransform GetPatternEffectTransform(const FBRBossPatternData& Pattern, float HeightOffset) const;
+	void SpawnPatternEffect(UNiagaraSystem* Effect, const FBRBossPatternData& Pattern, FName SocketName, float HeightOffset, const FVector& Scale) const;
 	void DrawActivePatternTelegraph() const;
 	virtual void ClearBaseTimers() override;
 };

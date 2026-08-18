@@ -24,12 +24,14 @@ public:
 
 protected:
 	virtual void NativeConstruct() override;
+	virtual FReply NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent) override;
 
 private:
 	UFUNCTION()
 	void HandleClicked();
 
 	void BuildSlotWidget();
+	void BindDesignerWidgets();
 	void RefreshVisuals();
 
 	UPROPERTY()

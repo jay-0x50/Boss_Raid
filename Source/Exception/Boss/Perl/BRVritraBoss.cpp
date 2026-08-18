@@ -36,7 +36,7 @@ void ABRVritraBoss::OnBossPhaseChanged(EBRBossPhase NewPhase)
 	Super::OnBossPhaseChanged(NewPhase);
 	ConfigureVritraPatterns();
 
-	if (GEngine)
+	if (bShowDebug && GEngine)
 	{
 		GEngine->AddOnScreenDebugMessage(2040, 2.0f, FColor::Orange, TEXT("Vritra shifted regex phase"));
 	}
@@ -62,6 +62,7 @@ void ABRVritraBoss::ConfigureVritraPatterns()
 
 	FBRBossPatternData RegexSpit;
 	RegexSpit.PatternName = TEXT("Regex_SpitLine");
+	RegexSpit.ImpactSocketName = TEXT("FX_Mouth");
 	RegexSpit.PatternType = EBRBossPatternType::Melee;
 	RegexSpit.MinRange = 560.0f;
 	RegexSpit.MaxRange = 1550.0f;
@@ -76,6 +77,7 @@ void ABRVritraBoss::ConfigureVritraPatterns()
 
 	FBRBossPatternData CaravanRush;
 	CaravanRush.PatternName = TEXT("Caravan_Rush");
+	CaravanRush.ImpactSocketName = TEXT("FX_FrontRight");
 	CaravanRush.PatternType = EBRBossPatternType::Dash;
 	CaravanRush.MinRange = 420.0f;
 	CaravanRush.MaxRange = 1150.0f;
@@ -92,6 +94,7 @@ void ABRVritraBoss::ConfigureVritraPatterns()
 	FBRBossPatternData HashSandstorm;
 	HashSandstorm.PatternName = TEXT("Hash_Sandstorm");
 	HashSandstorm.PatternType = EBRBossPatternType::AOE;
+	HashSandstorm.bCenterAOEOnTarget = true;
 	HashSandstorm.MinRange = 260.0f;
 	HashSandstorm.MaxRange = 900.0f;
 	HashSandstorm.Damage = 28.0f;
@@ -117,6 +120,7 @@ void ABRVritraBoss::ConfigureVritraPatterns()
 
 	FBRBossPatternData OneLinerPierce;
 	OneLinerPierce.PatternName = TEXT("OneLiner_Pierce");
+	OneLinerPierce.ImpactSocketName = TEXT("FX_FrontLeft");
 	OneLinerPierce.PatternType = EBRBossPatternType::Dash;
 	OneLinerPierce.MinRange = 700.0f;
 	OneLinerPierce.MaxRange = 1700.0f;

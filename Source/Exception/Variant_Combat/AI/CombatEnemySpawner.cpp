@@ -8,6 +8,13 @@
 #include "Components/ArrowComponent.h"
 #include "TimerManager.h"
 #include "CombatEnemy.h"
+#include "Kismet/GameplayStatics.h"
+#include "GameFramework/Pawn.h"
+
+namespace
+{
+	constexpr float GoldenAngleRadians = 2.39996323f;
+}
 
 ACombatEnemySpawner::ACombatEnemySpawner()
 {
@@ -31,63 +38,209 @@ ACombatEnemySpawner::ACombatEnemySpawner()
 void ACombatEnemySpawner::BeginPlay()
 {
 	Super::BeginPlay();
-	
+
+	ClearEncounter();
+
 	// should we spawn an enemy right away?
 	if (bShouldSpawnEnemiesImmediately)
 	{
-		// schedule the first enemy spawn
-		GetWorld()->GetTimerManager().SetTimer(SpawnTimer, this, &ACombatEnemySpawner::SpawnEnemy, InitialSpawnDelay);
+		ArmAutoActivation(InitialSpawnDelay);
 	}
-
 }
 
 void ACombatEnemySpawner::EndPlay(EEndPlayReason::Type EndPlayReason)
 {
 	Super::EndPlay(EndPlayReason);
 
-	// clear the spawn timer
-	GetWorld()->GetTimerManager().ClearTimer(SpawnTimer);
+	GetWorldTimerManager().ClearTimer(SpawnTimer);
+	GetWorldTimerManager().ClearTimer(DepletedTimer);
+	ActiveEnemies.Reset();
+	SpawnedEnemies.Reset();
+}
+
+void ACombatEnemySpawner::StartEncounter()
+{
+	GetWorldTimerManager().ClearTimer(SpawnTimer);
+
+	if (bEncounterActive || bEncounterDepleted)
+	{
+		return;
+	}
+
+	bEncounterActive = true;
+
+	if (!EnemyClass)
+	{
+		bEncounterActive = false;
+		UE_LOG(LogTemp, Error, TEXT("Enemy spawner %s cannot start because EnemyClass is not set."), *GetNameSafe(this));
+		return;
+	}
+
+	if (RemainingSpawnCount <= 0)
+	{
+		FinishEncounter();
+		return;
+	}
+
+	SpawnEnemy();
+}
+
+void ACombatEnemySpawner::TryAutoActivate()
+{
+	GetWorldTimerManager().ClearTimer(SpawnTimer);
+
+	if (bEncounterActive || bEncounterDepleted)
+	{
+		return;
+	}
+
+	if (!bWaitForPlayerWhenAutoSpawning)
+	{
+		StartEncounter();
+		return;
+	}
+
+	const APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
+	const float ActivationDistanceSquared = FMath::Square(FMath::Max(100.0f, AutoActivationDistance));
+	if (PlayerPawn && FVector::DistSquared2D(PlayerPawn->GetActorLocation(), GetActorLocation()) <= ActivationDistanceSquared)
+	{
+		StartEncounter();
+		return;
+	}
+
+	ArmAutoActivation(AutoActivationCheckInterval);
+}
+
+void ACombatEnemySpawner::ArmAutoActivation(float Delay)
+{
+	GetWorldTimerManager().SetTimer(SpawnTimer, this, &ACombatEnemySpawner::TryAutoActivate, FMath::Max(0.01f, Delay), false);
 }
 
 void ACombatEnemySpawner::SpawnEnemy()
 {
-	// ensure the enemy class is valid
-	if (IsValid(EnemyClass))
+	GetWorldTimerManager().ClearTimer(SpawnTimer);
+
+	if (!bEncounterActive || bEncounterDepleted || !EnemyClass)
 	{
-		// spawn the enemy at the reference capsule's transform
-		FActorSpawnParameters SpawnParams;
-		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-
-		ACombatEnemy* SpawnedEnemy = GetWorld()->SpawnActor<ACombatEnemy>(EnemyClass, SpawnCapsule->GetComponentTransform(), SpawnParams);
-
-		// was the enemy successfully created?
-		if (SpawnedEnemy)
-		{
-			// subscribe to the death delegate
-			SpawnedEnemy->OnEnemyDied.AddDynamic(this, &ACombatEnemySpawner::OnEnemyDied);
-		}
-	}
-}
-
-void ACombatEnemySpawner::OnEnemyDied()
-{
-	// decrease the spawn counter
-	--SpawnCount;
-
-	// is this the last enemy we should spawn?
-	if (SpawnCount <= 0)
-	{
-		// schedule the activation on depleted message
-		GetWorld()->GetTimerManager().SetTimer(SpawnTimer, this, &ACombatEnemySpawner::SpawnerDepleted, ActivationDelay);
 		return;
 	}
 
-	// schedule the next enemy spawn
-	GetWorld()->GetTimerManager().SetTimer(SpawnTimer, this, &ACombatEnemySpawner::SpawnEnemy, RespawnDelay);
+	const int32 AliveLimit = FMath::Clamp(MaxAliveEnemies, 1, 20);
+	bool bSpawnFailed = false;
+
+	while (RemainingSpawnCount > 0 && ActiveEnemies.Num() < AliveLimit)
+	{
+		FTransform SpawnTransform = SpawnCapsule->GetComponentTransform();
+		if (SpawnSpreadRadius > 0.0f && AliveLimit > 1)
+		{
+			const float Angle = static_cast<float>(SpawnedCount) * GoldenAngleRadians;
+			const float RingAlpha = FMath::Sqrt(static_cast<float>((SpawnedCount % AliveLimit) + 1) / static_cast<float>(AliveLimit));
+			const FVector LocalOffset(FMath::Cos(Angle), FMath::Sin(Angle), 0.0f);
+			SpawnTransform.AddToTranslation(GetActorTransform().TransformVectorNoScale(LocalOffset * SpawnSpreadRadius * RingAlpha));
+		}
+
+		FActorSpawnParameters SpawnParams;
+		SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+		SpawnParams.Owner = this;
+
+		ACombatEnemy* SpawnedEnemy = GetWorld()->SpawnActor<ACombatEnemy>(EnemyClass, SpawnTransform, SpawnParams);
+
+		if (!SpawnedEnemy)
+		{
+			bSpawnFailed = true;
+			break;
+		}
+
+		--RemainingSpawnCount;
+		++SpawnedCount;
+		ActiveEnemies.Add(TWeakObjectPtr<ACombatEnemy>(SpawnedEnemy));
+		SpawnedEnemies.Add(SpawnedEnemy);
+		SpawnedEnemy->OnEnemyDiedNative.AddUObject(this, &ACombatEnemySpawner::OnEnemyDied);
+		SpawnedEnemy->OnDestroyed.AddDynamic(this, &ACombatEnemySpawner::OnSpawnedEnemyDestroyed);
+	}
+
+	if (bSpawnFailed)
+	{
+		ScheduleSpawn(FMath::Max(0.1f, RespawnDelay));
+	}
+	else if (RemainingSpawnCount <= 0 && ActiveEnemies.Num() == 0)
+	{
+		FinishEncounter();
+	}
+}
+
+void ACombatEnemySpawner::OnEnemyDied(ACombatEnemy* Enemy)
+{
+	HandleEnemyRemoved(Enemy);
+}
+
+void ACombatEnemySpawner::OnSpawnedEnemyDestroyed(AActor* DestroyedActor)
+{
+	HandleEnemyRemoved(Cast<ACombatEnemy>(DestroyedActor));
+}
+
+void ACombatEnemySpawner::HandleEnemyRemoved(ACombatEnemy* Enemy)
+{
+	if (!Enemy || ActiveEnemies.Remove(TWeakObjectPtr<ACombatEnemy>(Enemy)) == 0 || !bEncounterActive)
+	{
+		return;
+	}
+
+	if (RemainingSpawnCount > 0)
+	{
+		ScheduleSpawn(RespawnDelay);
+	}
+	else if (ActiveEnemies.Num() == 0)
+	{
+		FinishEncounter();
+	}
+}
+
+void ACombatEnemySpawner::ScheduleSpawn(float Delay)
+{
+	if (!bEncounterActive || RemainingSpawnCount <= 0)
+	{
+		return;
+	}
+	if (GetWorldTimerManager().TimerExists(SpawnTimer))
+	{
+		return;
+	}
+
+	if (Delay <= 0.0f)
+	{
+		SpawnTimer = GetWorldTimerManager().SetTimerForNextTick(this, &ACombatEnemySpawner::SpawnEnemy);
+	}
+	else
+	{
+		GetWorldTimerManager().SetTimer(SpawnTimer, this, &ACombatEnemySpawner::SpawnEnemy, Delay, false);
+	}
+}
+
+void ACombatEnemySpawner::FinishEncounter()
+{
+	bEncounterActive = false;
+	bEncounterDepleted = true;
+	GetWorldTimerManager().ClearTimer(SpawnTimer);
+	GetWorldTimerManager().ClearTimer(DepletedTimer);
+
+	if (ActivationDelay <= 0.0f)
+	{
+		SpawnerDepleted();
+	}
+	else
+	{
+		GetWorldTimerManager().SetTimer(DepletedTimer, this, &ACombatEnemySpawner::SpawnerDepleted, ActivationDelay, false);
+	}
 }
 
 void ACombatEnemySpawner::SpawnerDepleted()
 {
+	if (!bEncounterDepleted)
+	{
+		return;
+	}
+
 	// process the actors to activate list
 	for (AActor* CurrentActor : ActorsToActivateWhenDepleted)
 	{
@@ -102,25 +255,66 @@ void ACombatEnemySpawner::SpawnerDepleted()
 
 void ACombatEnemySpawner::ToggleInteraction(AActor* ActivationInstigator)
 {
-	// stub
+	if (bEncounterActive)
+	{
+		DeactivateInteraction(ActivationInstigator);
+	}
+	else
+	{
+		ActivateInteraction(ActivationInstigator);
+	}
 }
 
 void ACombatEnemySpawner::ActivateInteraction(AActor* ActivationInstigator)
 {
-	// ensure we're only activated once, and only if we've deferred enemy spawning
-	if (bHasBeenActivated || bShouldSpawnEnemiesImmediately)
+	if (bEncounterActive || bEncounterDepleted)
 	{
 		return;
 	}
 
-	// raise the activation flag
-	bHasBeenActivated = true;
-
-	// spawn the first enemy
-	SpawnEnemy();
+	StartEncounter();
 }
 
 void ACombatEnemySpawner::DeactivateInteraction(AActor* ActivationInstigator)
 {
-	// stub
+	ClearEncounter();
+}
+
+void ACombatEnemySpawner::ResetEncounter(bool bRestartImmediately)
+{
+	ClearEncounter();
+
+	if (bRestartImmediately)
+	{
+		StartEncounter();
+	}
+	else if (bShouldSpawnEnemiesImmediately)
+	{
+		ArmAutoActivation(AutoActivationCheckInterval);
+	}
+}
+
+void ACombatEnemySpawner::ClearEncounter()
+{
+	GetWorldTimerManager().ClearTimer(SpawnTimer);
+	GetWorldTimerManager().ClearTimer(DepletedTimer);
+	bEncounterActive = false;
+	bEncounterDepleted = false;
+
+	TArray<TWeakObjectPtr<ACombatEnemy>> EnemiesToDestroy = MoveTemp(SpawnedEnemies);
+	SpawnedEnemies.Reset();
+	ActiveEnemies.Reset();
+
+	for (const TWeakObjectPtr<ACombatEnemy>& EnemyPtr : EnemiesToDestroy)
+	{
+		if (ACombatEnemy* Enemy = EnemyPtr.Get())
+		{
+			Enemy->OnEnemyDiedNative.RemoveAll(this);
+			Enemy->OnDestroyed.RemoveDynamic(this, &ACombatEnemySpawner::OnSpawnedEnemyDestroyed);
+			Enemy->Destroy();
+		}
+	}
+
+	RemainingSpawnCount = FMath::Max(0, SpawnCount);
+	SpawnedCount = 0;
 }

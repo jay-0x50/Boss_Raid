@@ -1,13 +1,16 @@
 #include "Boss/Base/BRBossBase.h"
 
 #include "Boss/AI/BRBossAIController.h"
+#include "Boss/Feedback/BRBossHitCameraShake.h"
 #include "Boss/Team/BRBossTeamCoordinator.h"
 #include "BRStatComponent.h"
+#include "Components/CapsuleComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Animation/AnimationAsset.h"
 #include "Engine/World.h"
+#include "GameFramework/PlayerController.h"
 
 ABRBossBase::ABRBossBase()
 {
@@ -15,8 +18,17 @@ ABRBossBase::ABRBossBase()
 	AIControllerClass = ABRBossAIController::StaticClass();
 	AutoPossessAI = EAutoPossessAI::PlacedInWorldOrSpawned;
 
+	HitCapsule = CreateDefaultSubobject<UCapsuleComponent>(TEXT("HitCapsule"));
+	SetRootComponent(HitCapsule);
+	HitCapsule->InitCapsuleSize(90.0f, 140.0f);
+	HitCapsule->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	HitCapsule->SetCollisionObjectType(ECC_Pawn);
+	HitCapsule->SetCollisionResponseToAllChannels(ECR_Block);
+	HitCapsule->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+	HitCapsule->SetGenerateOverlapEvents(false);
+
 	SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
-	SetRootComponent(SceneRoot);
+	SceneRoot->SetupAttachment(HitCapsule);
 
 	VisualRoot = CreateDefaultSubobject<USceneComponent>(TEXT("VisualRoot"));
 	VisualRoot->SetupAttachment(SceneRoot);
@@ -42,6 +54,7 @@ ABRBossBase::ABRBossBase()
 	SkeletalMeshComponent->SetHiddenInGame(true);
 
 	StatComponent = CreateDefaultSubobject<UBRStatComponent>(TEXT("StatComponent"));
+	CombatHitCameraShakeClass = UBRBossHitCameraShake::StaticClass();
 }
 
 void ABRBossBase::BeginPlay()
@@ -112,6 +125,8 @@ void ABRBossBase::Tick(float DeltaSeconds)
 		UpdateBossAI(DeltaSeconds);
 	}
 
+	UpdateProceduralIdleMotion(DeltaSeconds);
+	UpdateProceduralHitReaction(DeltaSeconds);
 	DrawBossDebug();
 }
 
@@ -151,6 +166,53 @@ void ABRBossBase::ApplyMeshVisualTransform()
 		SkeletalMeshComponent->SetGenerateOverlapEvents(false);
 		SetBossAnimationPlaying(bUseSkeletalMesh && bCombatAIEnabled && !bIsDead);
 	}
+}
+
+void ABRBossBase::UpdateProceduralIdleMotion(float DeltaSeconds)
+{
+	if (!VisualRoot)
+	{
+		return;
+	}
+
+	const bool bHasStaticMesh = MeshComponent && MeshComponent->GetStaticMesh();
+	const bool bHasSkeletalMesh = SkeletalMeshComponent && SkeletalMeshComponent->GetSkeletalMeshAsset();
+	const bool bUseSkeletalMesh = bHasSkeletalMesh && (VisualMeshType == EBRBossVisualMeshType::SkeletalMesh || !bHasStaticMesh);
+	const bool bUseStaticMesh = bHasStaticMesh && !bUseSkeletalMesh;
+	const TObjectPtr<UAnimationAsset>* StageAnimation = StageAnimations.Find(CurrentAnimationStage);
+	const bool bHasStageAnimation = StageAnimation && StageAnimation->Get();
+	const bool bHasAnimationBlueprint = bUseSkeletalMesh
+		&& SkeletalMeshComponent->GetAnimationMode() == EAnimationMode::AnimationBlueprint
+		&& SkeletalMeshComponent->GetAnimInstance();
+	const bool bNeedsFallback = bUseStaticMesh || (bUseSkeletalMesh && !bHasStageAnimation && !bHasAnimationBlueprint);
+	const bool bIsSafeFallbackStage = CurrentAnimationStage == EBRBossAnimationStage::Idle
+		|| CurrentAnimationStage == EBRBossAnimationStage::Move
+		|| CurrentAnimationStage == EBRBossAnimationStage::PatternRecovery;
+	const bool bCanUseFallback = bUseProceduralIdleFallback
+		&& bNeedsFallback
+		&& bIsSafeFallbackStage
+		&& bCombatAIEnabled
+		&& !bIsAttacking
+		&& !bIsGroggy
+		&& !bIsBeingExecuted
+		&& !bIsDead;
+
+	if (!bCanUseFallback)
+	{
+		ProceduralIdleBlendAlpha = 0.0f;
+		VisualRoot->SetRelativeLocation(FVector::ZeroVector);
+		VisualRoot->SetRelativeRotation(FRotator::ZeroRotator);
+		return;
+	}
+
+	ProceduralIdleTime += FMath::Max(DeltaSeconds, 0.0f);
+	ProceduralIdleBlendAlpha = FMath::FInterpTo(ProceduralIdleBlendAlpha, 1.0f, DeltaSeconds, 4.0f);
+	const float MotionPhase = ProceduralIdleTime * ProceduralIdleFrequency * 2.0f * PI;
+	const float BobOffset = FMath::Sin(MotionPhase) * ProceduralIdleBobAmplitude * ProceduralIdleBlendAlpha;
+	const float LeanAngle = FMath::Sin(MotionPhase * 0.5f) * ProceduralIdleLeanAngle * ProceduralIdleBlendAlpha;
+
+	VisualRoot->SetRelativeLocation(FVector(0.0f, 0.0f, BobOffset));
+	VisualRoot->SetRelativeRotation(FRotator(LeanAngle, 0.0f, 0.0f));
 }
 
 void ABRBossBase::SetBossAnimationPlaying(bool bShouldPlay)
@@ -194,6 +256,16 @@ void ABRBossBase::PlayBossStageAnimation(EBRBossAnimationStage Stage, FName Acti
 		}
 	}
 
+	// Most existing boss Blueprints already have an intro animation. Reuse it
+	// for the phase break until a dedicated transition animation is assigned.
+	if (!AnimationToPlay && Stage == EBRBossAnimationStage::PhaseTransition)
+	{
+		if (const TObjectPtr<UAnimationAsset>* FoundAnimation = StageAnimations.Find(EBRBossAnimationStage::Intro))
+		{
+			AnimationToPlay = FoundAnimation->Get();
+		}
+	}
+
 	if (!AnimationToPlay)
 	{
 		return;
@@ -212,6 +284,7 @@ void ABRBossBase::PlayBossStageAnimation(EBRBossAnimationStage Stage, FName Acti
 
 void ABRBossBase::NotifyBossAnimationStage(EBRBossAnimationStage Stage, FName ActionName)
 {
+	CurrentAnimationStage = Stage;
 	PlayBossStageAnimation(Stage, ActionName);
 	OnAnimationStageChanged.Broadcast(Stage, ActionName);
 	BP_BossAnimationStageChanged(Stage, ActionName);
@@ -261,6 +334,59 @@ void ABRBossBase::ApplyGroundGravity(float DeltaSeconds)
 void ABRBossBase::ClearBaseTimers()
 {
 	GetWorldTimerManager().ClearTimer(GroggyTimerHandle);
+	GetWorldTimerManager().ClearTimer(PhaseTransitionTimerHandle);
+}
+
+void ABRBossBase::StartProceduralHitReaction(AActor* DamageCauser)
+{
+	ProceduralHitReactionTime = FMath::Max(ProceduralHitReactionDuration, KINDA_SMALL_NUMBER);
+
+	const FVector AwayFromDamage = DamageCauser
+		? FVector(GetActorLocation() - DamageCauser->GetActorLocation()).GetSafeNormal2D()
+		: -GetActorForwardVector();
+	const FVector SafeWorldDirection = AwayFromDamage.IsNearlyZero() ? -GetActorForwardVector() : AwayFromDamage;
+	ProceduralHitReactionDirection = GetActorTransform().InverseTransformVectorNoScale(SafeWorldDirection).GetSafeNormal();
+}
+
+void ABRBossBase::UpdateProceduralHitReaction(float DeltaSeconds)
+{
+	if (!VisualRoot || ProceduralHitReactionTime <= 0.0f || ProceduralHitReactionDuration <= KINDA_SMALL_NUMBER)
+	{
+		return;
+	}
+
+	ProceduralHitReactionTime = FMath::Max(ProceduralHitReactionTime - FMath::Max(DeltaSeconds, 0.0f), 0.0f);
+	const float ReactionAlpha = ProceduralHitReactionTime / ProceduralHitReactionDuration;
+	const float KickAlpha = FMath::Sin(ReactionAlpha * PI * 0.5f);
+	VisualRoot->AddLocalOffset(ProceduralHitReactionDirection * ProceduralHitReactionDistance * KickAlpha);
+	VisualRoot->AddLocalRotation(FRotator(-2.5f * KickAlpha, 0.0f, ProceduralHitReactionDirection.Y * 2.0f * KickAlpha));
+}
+
+void ABRBossBase::PlayCameraFeedbackForActor(AActor* FeedbackActor, float ShakeScale, float RumbleIntensity) const
+{
+	const APawn* FeedbackPawn = Cast<APawn>(FeedbackActor);
+	APlayerController* PlayerController = FeedbackPawn ? Cast<APlayerController>(FeedbackPawn->GetController()) : nullptr;
+	if (!PlayerController)
+	{
+		return;
+	}
+
+	if (CombatHitCameraShakeClass && ShakeScale > KINDA_SMALL_NUMBER)
+	{
+		PlayerController->ClientStartCameraShake(CombatHitCameraShakeClass, ShakeScale);
+	}
+
+	if (RumbleIntensity > KINDA_SMALL_NUMBER)
+	{
+		PlayerController->PlayDynamicForceFeedback(
+			FMath::Clamp(RumbleIntensity, 0.0f, 1.0f),
+			0.12f,
+			true,
+			true,
+			true,
+			true,
+			EDynamicForceFeedbackAction::Start);
+	}
 }
 
 void ABRBossBase::OnBossReset()

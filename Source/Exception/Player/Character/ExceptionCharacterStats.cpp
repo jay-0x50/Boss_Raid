@@ -98,9 +98,33 @@ void AExceptionCharacter::ApplySavedProgression(int32 SavedPlayerLevel, int32 Sa
 	VitalityLevel = FMath::Max(0, SavedVitalityLevel);
 	EnduranceLevel = FMath::Max(0, SavedEnduranceLevel);
 	PowerLevel = FMath::Max(0, SavedPowerLevel);
+	ApplyLevelStats();
 	OnProgressionChanged.Broadcast();
 	BroadcastHP();
 	BroadcastStamina();
+}
+
+void AExceptionCharacter::SaveBaseStats()
+{
+	if (bBaseStatsSaved)
+	{
+		return;
+	}
+
+	BaseMaxHP = FMath::Max(1.0f, MaxHP - (VitalityLevel * HPPerVitalityLevel));
+	BaseMaxStamina = FMath::Max(1.0f, MaxStamina - (EnduranceLevel * StaminaPerEnduranceLevel));
+	BaseLightDamage = FMath::Max(0.0f, LightAttackDamage - (PowerLevel * DamagePerPowerLevel));
+	BaseHeavyDamage = FMath::Max(0.0f, HeavyAttackDamage - (PowerLevel * DamagePerPowerLevel * 1.75f));
+	bBaseStatsSaved = true;
+}
+
+void AExceptionCharacter::ApplyLevelStats()
+{
+	SaveBaseStats();
+	MaxHP = BaseMaxHP + (VitalityLevel * HPPerVitalityLevel);
+	MaxStamina = BaseMaxStamina + (EnduranceLevel * StaminaPerEnduranceLevel);
+	LightAttackDamage = BaseLightDamage + (PowerLevel * DamagePerPowerLevel);
+	HeavyAttackDamage = BaseHeavyDamage + (PowerLevel * DamagePerPowerLevel * 1.75f);
 }
 
 void AExceptionCharacter::ApplySavedExperience(int32 SavedCurrentExperience, int32 SavedDroppedExperience)
@@ -190,36 +214,45 @@ void AExceptionCharacter::AwardBossVictoryRewards(AActor* DefeatedBoss)
 bool AExceptionCharacter::SpendUpgradePoint(EBRPlayerUpgradeStat UpgradeStat)
 {
 	const int32 LevelUpCost = GetLevelUpExperienceCost();
-	if (CurrentExperience < LevelUpCost || CombatState == EBRPlayerCombatState::Dead)
+	if (UpgradePoints <= 0 || CurrentExperience < LevelUpCost || CombatState == EBRPlayerCombatState::Dead)
 	{
 		return false;
 	}
 
+	switch (UpgradeStat)
+	{
+	case EBRPlayerUpgradeStat::Vitality:
+	case EBRPlayerUpgradeStat::Endurance:
+	case EBRPlayerUpgradeStat::Power:
+		break;
+	default:
+		return false;
+	}
+
 	CurrentExperience -= LevelUpCost;
-	UpgradePoints = FMath::Max(0, UpgradePoints - 1);
+	--UpgradePoints;
 	++PlayerLevel;
 
 	switch (UpgradeStat)
 	{
 	case EBRPlayerUpgradeStat::Vitality:
 		++VitalityLevel;
-		MaxHP += HPPerVitalityLevel;
+		ApplyLevelStats();
 		CurrentHP = MaxHP;
 		BroadcastHP();
 		break;
 	case EBRPlayerUpgradeStat::Endurance:
 		++EnduranceLevel;
-		MaxStamina += StaminaPerEnduranceLevel;
+		ApplyLevelStats();
 		CurrentStamina = MaxStamina;
 		BroadcastStamina();
 		break;
 	case EBRPlayerUpgradeStat::Power:
 		++PowerLevel;
-		LightAttackDamage += DamagePerPowerLevel;
-		HeavyAttackDamage += DamagePerPowerLevel * 1.75f;
+		ApplyLevelStats();
 		break;
 	default:
-		break;
+		return false;
 	}
 
 	OnProgressionChanged.Broadcast();
@@ -317,36 +350,48 @@ void AExceptionCharacter::RefreshHiddenStoryRewards()
 	}
 }
 
-void AExceptionCharacter::HandleInventoryItemUsed(int32 SlotIndex, const FBRInventorySlot& Slot)
+bool AExceptionCharacter::TryUseInventoryItem(int32 SlotIndex, const FBRInventorySlot& Slot)
 {
 	if (Slot.IsEmpty())
 	{
-		return;
+		return false;
 	}
 
 	switch (Slot.Item.Effect)
 	{
 	case EBRInventoryItemEffect::HealHP:
+		if (CombatState == EBRPlayerCombatState::Dead || CurrentHP >= MaxHP)
+		{
+			return false;
+		}
 		HealHP(Slot.Item.EffectValue);
-		break;
+		return true;
 	case EBRInventoryItemEffect::RestoreStamina:
+		if (CombatState == EBRPlayerCombatState::Dead || CurrentStamina >= MaxStamina)
+		{
+			return false;
+		}
 		RestoreStamina(Slot.Item.EffectValue);
-		break;
+		return true;
 	case EBRInventoryItemEffect::RestoreAll:
+		if (CombatState == EBRPlayerCombatState::Dead || (CurrentHP >= MaxHP && CurrentStamina >= MaxStamina))
+		{
+			return false;
+		}
 		HealHP(Slot.Item.EffectValue);
 		RestoreStamina(Slot.Item.EffectValue);
-		break;
+		return true;
 	case EBRInventoryItemEffect::GrantUpgradePoint:
 		AddUpgradePoints(FMath::Max(1, FMath::RoundToInt(Slot.Item.EffectValue)));
-		break;
+		return true;
 	case EBRInventoryItemEffect::HiddenRootWeapon:
 		if (GEngine)
 		{
 			GEngine->AddOnScreenDebugMessage(1012, 2.0f, FColor::Purple, TEXT("Mimikatz, Authority Seized is already bound."));
 		}
-		break;
+		return true;
 	default:
-		break;
+		return true;
 	}
 }
 

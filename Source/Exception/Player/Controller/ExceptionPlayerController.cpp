@@ -118,8 +118,10 @@ void AExceptionPlayerController::SetupInputComponent()
 
 	if (InputComponent)
 	{
-		InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &AExceptionPlayerController::TogglePauseMenuWidget);
-		InputComponent->BindKey(EKeys::I, IE_Pressed, this, &AExceptionPlayerController::ToggleInventoryWidget);
+		FInputKeyBinding& PauseBinding = InputComponent->BindKey(EKeys::Escape, IE_Pressed, this, &AExceptionPlayerController::TogglePauseMenuWidget);
+		PauseBinding.bExecuteWhenPaused = true;
+		FInputKeyBinding& InventoryBinding = InputComponent->BindKey(EKeys::I, IE_Pressed, this, &AExceptionPlayerController::ToggleInventoryWidget);
+		InventoryBinding.bExecuteWhenPaused = true;
 		InputComponent->BindKey(EKeys::Q, IE_Pressed, this, &AExceptionPlayerController::UseHotbarSlotQ);
 		InputComponent->BindKey(EKeys::E, IE_Pressed, this, &AExceptionPlayerController::UseHotbarSlotE);
 		InputComponent->BindKey(EKeys::R, IE_Pressed, this, &AExceptionPlayerController::UseHotbarSlotR);

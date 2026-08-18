@@ -31,7 +31,7 @@ void ABRSelvaraBoss::OnBossPhaseChanged(EBRBossPhase NewPhase)
 	Super::OnBossPhaseChanged(NewPhase);
 	ConfigureSelvaraPatterns();
 
-	if (GEngine)
+	if (bShowDebug && GEngine)
 	{
 		GEngine->AddOnScreenDebugMessage(2030, 2.0f, FColor::Orange, TEXT("Selvara shifted query phase"));
 	}
@@ -115,6 +115,7 @@ void ABRSelvaraBoss::ConfigureSelvaraPatterns()
 	FBRBossPatternData CrashRecovery;
 	CrashRecovery.PatternName = TEXT("Crash_Recovery_BellyFlop");
 	CrashRecovery.PatternType = EBRBossPatternType::AOE;
+	CrashRecovery.bCenterAOEOnTarget = true;
 	CrashRecovery.MinRange = 0.0f;
 	CrashRecovery.MaxRange = 820.0f;
 	CrashRecovery.Damage = 42.0f;

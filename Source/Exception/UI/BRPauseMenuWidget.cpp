@@ -19,6 +19,7 @@ void UBRPauseMenuWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 	BuildMenuWidget();
+	BindDesignerWidgets();
 	RefreshMenu();
 }
 
@@ -38,7 +39,8 @@ void UBRPauseMenuWidget::RefreshMenu()
 	if (PointsText)
 	{
 		PointsText->SetText(FText::FromString(FString::Printf(
-			TEXT("XP %d / %d   Dropped %d"),
+			TEXT("Point %d   XP %d / %d   Dropped %d"),
+			PlayerCharacter->GetUpgradePoints(),
 			PlayerCharacter->GetCurrentExperience(),
 			PlayerCharacter->GetLevelUpExperienceCost(),
 			PlayerCharacter->GetDroppedExperience())));
@@ -74,7 +76,7 @@ void UBRPauseMenuWidget::HandleLevelVitalityClicked()
 	{
 		if (!PlayerCharacter->SpendUpgradePoint(EBRPlayerUpgradeStat::Vitality) && StatusText)
 		{
-			StatusText->SetText(FText::FromString(TEXT("Not enough XP.")));
+			StatusText->SetText(FText::FromString(TEXT("Need 1 point and enough XP.")));
 		}
 		RefreshMenu();
 	}
@@ -86,7 +88,7 @@ void UBRPauseMenuWidget::HandleLevelEnduranceClicked()
 	{
 		if (!PlayerCharacter->SpendUpgradePoint(EBRPlayerUpgradeStat::Endurance) && StatusText)
 		{
-			StatusText->SetText(FText::FromString(TEXT("Not enough XP.")));
+			StatusText->SetText(FText::FromString(TEXT("Need 1 point and enough XP.")));
 		}
 		RefreshMenu();
 	}
@@ -98,7 +100,7 @@ void UBRPauseMenuWidget::HandleLevelPowerClicked()
 	{
 		if (!PlayerCharacter->SpendUpgradePoint(EBRPlayerUpgradeStat::Power) && StatusText)
 		{
-			StatusText->SetText(FText::FromString(TEXT("Not enough XP.")));
+			StatusText->SetText(FText::FromString(TEXT("Need 1 point and enough XP.")));
 		}
 		RefreshMenu();
 	}
@@ -270,6 +272,81 @@ void UBRPauseMenuWidget::BuildMenuWidget()
 
 	UButton* PowerButton = AddMenuButton(LevelBox, FText::FromString(TEXT("Level Power")));
 	PowerButton->OnClicked.AddUniqueDynamic(this, &UBRPauseMenuWidget::HandleLevelPowerClicked);
+}
+
+void UBRPauseMenuWidget::BindDesignerWidgets()
+{
+	if (!WidgetTree)
+	{
+		return;
+	}
+
+	auto FindButton = [this](const TCHAR* Name)
+	{
+		return Cast<UButton>(WidgetTree->FindWidget(FName(Name)));
+	};
+	auto FindText = [this](const TCHAR* Name)
+	{
+		return Cast<UTextBlock>(WidgetTree->FindWidget(FName(Name)));
+	};
+
+	if (UButton* Button = FindButton(TEXT("Button_Resume")))
+	{
+		Button->OnClicked.AddUniqueDynamic(this, &UBRPauseMenuWidget::HandleResumeClicked);
+	}
+	if (UButton* Button = FindButton(TEXT("Button_SaveGame")))
+	{
+		Button->OnClicked.AddUniqueDynamic(this, &UBRPauseMenuWidget::HandleSaveClicked);
+	}
+	if (UButton* Button = FindButton(TEXT("Button_Inventory")))
+	{
+		Button->OnClicked.AddUniqueDynamic(this, &UBRPauseMenuWidget::HandleInventoryClicked);
+	}
+	if (UButton* Button = FindButton(TEXT("Button_ReturnTitle")))
+	{
+		Button->OnClicked.AddUniqueDynamic(this, &UBRPauseMenuWidget::HandleTitleClicked);
+	}
+	if (UButton* Button = FindButton(TEXT("Button_QuitGame")))
+	{
+		Button->OnClicked.AddUniqueDynamic(this, &UBRPauseMenuWidget::HandleQuitClicked);
+	}
+	if (UButton* Button = FindButton(TEXT("VitButton")))
+	{
+		Button->OnClicked.AddUniqueDynamic(this, &UBRPauseMenuWidget::HandleLevelVitalityClicked);
+	}
+	if (UButton* Button = FindButton(TEXT("EndButton")))
+	{
+		Button->OnClicked.AddUniqueDynamic(this, &UBRPauseMenuWidget::HandleLevelEnduranceClicked);
+	}
+	if (UButton* Button = FindButton(TEXT("PowerButton")))
+	{
+		Button->OnClicked.AddUniqueDynamic(this, &UBRPauseMenuWidget::HandleLevelPowerClicked);
+	}
+
+	if (UTextBlock* Text = FindText(TEXT("LevelValue")))
+	{
+		LevelText = Text;
+	}
+	if (UTextBlock* Text = FindText(TEXT("PointValue")))
+	{
+		PointsText = Text;
+	}
+	if (UTextBlock* Text = FindText(TEXT("VitValue")))
+	{
+		VitalityText = Text;
+	}
+	if (UTextBlock* Text = FindText(TEXT("EndValue")))
+	{
+		EnduranceText = Text;
+	}
+	if (UTextBlock* Text = FindText(TEXT("PowerValue")))
+	{
+		PowerText = Text;
+	}
+	if (UTextBlock* Text = FindText(TEXT("MenuStatus")))
+	{
+		StatusText = Text;
+	}
 }
 
 UButton* UBRPauseMenuWidget::AddMenuButton(UVerticalBox* ParentBox, const FText& Label)

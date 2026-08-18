@@ -1,5 +1,10 @@
 #include "BRInventoryComponent.h"
 
+namespace
+{
+	constexpr int32 DefaultHotbarCapacity = 23;
+}
+
 UBRInventoryComponent::UBRInventoryComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
@@ -15,27 +20,41 @@ void UBRInventoryComponent::BeginPlay()
 void UBRInventoryComponent::InitializeInventory()
 {
 	Slots = InitialSlots;
-	Slots.SetNum(FMath::Max(1, Capacity));
-	BroadcastInventoryChanged();
+	Capacity = FMath::Max(DefaultHotbarCapacity, Capacity);
+	Slots.SetNum(Capacity);
+	NotifyInventoryChanged();
 }
 
 void UBRInventoryComponent::SetCapacity(int32 NewCapacity)
 {
-	Capacity = FMath::Max(1, NewCapacity);
+	const int32 RequestedCapacity = FMath::Max(DefaultHotbarCapacity, NewCapacity);
+	if (RequestedCapacity < Slots.Num())
+	{
+		for (int32 SlotIndex = RequestedCapacity; SlotIndex < Slots.Num(); ++SlotIndex)
+		{
+			if (!Slots[SlotIndex].IsEmpty())
+			{
+				UE_LOG(LogTemp, Warning, TEXT("Inventory resize rejected: slot %d is not empty."), SlotIndex);
+				return;
+			}
+		}
+	}
+
+	Capacity = RequestedCapacity;
 	Slots.SetNum(Capacity);
-	BroadcastInventoryChanged();
+	NotifyInventoryChanged();
 }
 
 void UBRInventoryComponent::SetSlots(const TArray<FBRInventorySlot>& NewSlots)
 {
 	Slots = NewSlots;
-	Capacity = FMath::Max(1, Slots.Num());
+	Capacity = FMath::Max(DefaultHotbarCapacity, Slots.Num());
 	Slots.SetNum(Capacity);
-	BroadcastInventoryChanged();
+	NotifyInventoryChanged();
 
 	for (int32 SlotIndex = 0; SlotIndex < Slots.Num(); ++SlotIndex)
 	{
-		BroadcastSlotChanged(SlotIndex);
+		NotifySlotChanged(SlotIndex);
 	}
 }
 
@@ -92,7 +111,7 @@ bool UBRInventoryComponent::AddItem(const FBRInventoryItemDefinition& Item, int3
 		const int32 AddedQuantity = FMath::Min(MaxStack - Slot.Quantity, RemainingQuantity);
 		Slot.Quantity += AddedQuantity;
 		RemainingQuantity -= AddedQuantity;
-		BroadcastSlotChanged(SlotIndex);
+		NotifySlotChanged(SlotIndex);
 	}
 
 	for (int32 SlotIndex = 0; SlotIndex < Slots.Num() && RemainingQuantity > 0; ++SlotIndex)
@@ -107,16 +126,34 @@ bool UBRInventoryComponent::AddItem(const FBRInventoryItemDefinition& Item, int3
 		Slot.Item = Item;
 		Slot.Quantity = AddedQuantity;
 		RemainingQuantity -= AddedQuantity;
-		BroadcastSlotChanged(SlotIndex);
+		NotifySlotChanged(SlotIndex);
 	}
 
-	BroadcastInventoryChanged();
+	NotifyInventoryChanged();
 	return RemainingQuantity < Quantity;
 }
 
 bool UBRInventoryComponent::RemoveItem(FName ItemId, int32 Quantity)
 {
 	if (ItemId.IsNone() || Quantity <= 0)
+	{
+		return false;
+	}
+
+	int64 AvailableQuantity = 0;
+	for (const FBRInventorySlot& Slot : Slots)
+	{
+		if (!Slot.IsEmpty() && Slot.Item.ItemId == ItemId)
+		{
+			AvailableQuantity += Slot.Quantity;
+			if (AvailableQuantity >= Quantity)
+			{
+				break;
+			}
+		}
+	}
+
+	if (AvailableQuantity < Quantity)
 	{
 		return false;
 	}
@@ -137,15 +174,11 @@ bool UBRInventoryComponent::RemoveItem(FName ItemId, int32 Quantity)
 		{
 			EmptySlot(SlotIndex);
 		}
-		BroadcastSlotChanged(SlotIndex);
+		NotifySlotChanged(SlotIndex);
 	}
 
-	const bool bRemovedAny = RemainingQuantity < Quantity;
-	if (bRemovedAny)
-	{
-		BroadcastInventoryChanged();
-	}
-	return bRemovedAny;
+	NotifyInventoryChanged();
+	return RemainingQuantity == 0;
 }
 
 bool UBRInventoryComponent::RemoveFromSlot(int32 SlotIndex, int32 Quantity)
@@ -162,8 +195,8 @@ bool UBRInventoryComponent::RemoveFromSlot(int32 SlotIndex, int32 Quantity)
 		EmptySlot(SlotIndex);
 	}
 
-	BroadcastSlotChanged(SlotIndex);
-	BroadcastInventoryChanged();
+	NotifySlotChanged(SlotIndex);
+	NotifyInventoryChanged();
 	return true;
 }
 
@@ -183,16 +216,19 @@ bool UBRInventoryComponent::MoveSlot(int32 FromSlotIndex, int32 ToSlotIndex)
 
 	if (!ToSlot.IsEmpty() && ToSlot.Item.ItemId == FromSlot.Item.ItemId)
 	{
-		const int32 MaxStack = FMath::Max(1, ToSlot.Item.MaxStack);
-		const int32 AddedQuantity = FMath::Min(MaxStack - ToSlot.Quantity, FromSlot.Quantity);
-		if (AddedQuantity > 0)
+		const int32 ExistingStackMax = FMath::Max(1, ToSlot.Item.MaxStack);
+		const int32 AvailableSpace = FMath::Max(0, ExistingStackMax - ToSlot.Quantity);
+		const int32 AddedQuantity = FMath::Min(AvailableSpace, FromSlot.Quantity);
+		if (AddedQuantity <= 0)
 		{
-			ToSlot.Quantity += AddedQuantity;
-			FromSlot.Quantity -= AddedQuantity;
-			if (FromSlot.Quantity <= 0)
-			{
-				EmptySlot(FromSlotIndex);
-			}
+			return false;
+		}
+
+		ToSlot.Quantity += AddedQuantity;
+		FromSlot.Quantity -= AddedQuantity;
+		if (FromSlot.Quantity <= 0)
+		{
+			EmptySlot(FromSlotIndex);
 		}
 	}
 	else
@@ -200,9 +236,9 @@ bool UBRInventoryComponent::MoveSlot(int32 FromSlotIndex, int32 ToSlotIndex)
 		Swap(FromSlot, ToSlot);
 	}
 
-	BroadcastSlotChanged(FromSlotIndex);
-	BroadcastSlotChanged(ToSlotIndex);
-	BroadcastInventoryChanged();
+	NotifySlotChanged(FromSlotIndex);
+	NotifySlotChanged(ToSlotIndex);
+	NotifyInventoryChanged();
 	return true;
 }
 
@@ -214,11 +250,16 @@ bool UBRInventoryComponent::UseSlot(int32 SlotIndex)
 	}
 
 	const FBRInventorySlot UsedSlot = Slots[SlotIndex];
+	if (TryUseItem.IsBound() && !TryUseItem.Execute(SlotIndex, UsedSlot))
+	{
+		return false;
+	}
+
 	OnItemUsed.Broadcast(SlotIndex, UsedSlot);
 
-	if (UsedSlot.Item.bConsumeOnUse)
+	if (UsedSlot.Item.bConsumeOnUse && !RemoveFromSlot(SlotIndex, 1))
 	{
-		RemoveFromSlot(SlotIndex, 1);
+		return false;
 	}
 
 	return true;
@@ -229,9 +270,9 @@ void UBRInventoryComponent::ClearInventory()
 	for (int32 SlotIndex = 0; SlotIndex < Slots.Num(); ++SlotIndex)
 	{
 		EmptySlot(SlotIndex);
-		BroadcastSlotChanged(SlotIndex);
+		NotifySlotChanged(SlotIndex);
 	}
-	BroadcastInventoryChanged();
+	NotifyInventoryChanged();
 }
 
 void UBRInventoryComponent::EmptySlot(int32 SlotIndex)
@@ -242,12 +283,12 @@ void UBRInventoryComponent::EmptySlot(int32 SlotIndex)
 	}
 }
 
-void UBRInventoryComponent::BroadcastInventoryChanged()
+void UBRInventoryComponent::NotifyInventoryChanged()
 {
 	OnInventoryChanged.Broadcast(Slots);
 }
 
-void UBRInventoryComponent::BroadcastSlotChanged(int32 SlotIndex)
+void UBRInventoryComponent::NotifySlotChanged(int32 SlotIndex)
 {
 	if (Slots.IsValidIndex(SlotIndex))
 	{

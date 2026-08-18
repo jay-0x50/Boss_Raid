@@ -63,7 +63,7 @@ void SetInventorySlotsParam(UFunction* Function, uint8* Params, const TArray<FBR
 	}
 }
 
-void ProcessWidgetFunction(UUserWidget* Widget, FName FunctionName, TFunctionRef<void(UFunction*, uint8*)> FillParams)
+void CallWidgetFunc(UUserWidget* Widget, FName FunctionName, TFunctionRef<void(UFunction*, uint8*)> FillParams)
 {
 	if (!Widget)
 	{
@@ -107,9 +107,24 @@ UUserWidget* AExceptionPlayerController::ShowInventoryWidget()
 		InventoryWidget = CreateWidget<UUserWidget>(this, InventoryWidgetClass);
 	}
 
+	if (!InventoryWidget)
+	{
+		return nullptr;
+	}
+
+	const bool bPauseMenuOpen = IsPauseMenuOpen();
+	if (bPauseMenuOpen && InventoryWidget->IsInViewport())
+	{
+		InventoryWidget->RemoveFromParent();
+	}
+
 	if (InventoryWidget && !InventoryWidget->IsInViewport())
 	{
-		InventoryWidget->AddToPlayerScreen(IsPauseMenuOpen() ? 70 : 40);
+		InventoryWidget->AddToPlayerScreen(bPauseMenuOpen ? 70 : 40);
+	}
+	if (!bPauseMenuOpen)
+	{
+		SetPause(true);
 	}
 
 	bShowMouseCursor = true;
@@ -122,7 +137,7 @@ UUserWidget* AExceptionPlayerController::ShowInventoryWidget()
 	SetInputMode(InputMode);
 
 	BindInventoryWidgetToPawn();
-	PushInventoryToWidget();
+	RefreshInventoryUI();
 
 	return InventoryWidget;
 }
@@ -134,8 +149,20 @@ void AExceptionPlayerController::HideInventoryWidget()
 		InventoryWidget->RemoveFromParent();
 	}
 
-	if (!IsPauseMenuOpen() && !IsInTitleLevel())
+	if (IsPauseMenuOpen())
 	{
+		bShowMouseCursor = true;
+		FInputModeGameAndUI InputMode;
+		InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+		if (PauseMenuWidget)
+		{
+			InputMode.SetWidgetToFocus(PauseMenuWidget->TakeWidget());
+		}
+		SetInputMode(InputMode);
+	}
+	else if (!IsInTitleLevel())
+	{
+		SetPause(false);
 		bShowMouseCursor = false;
 		SetInputMode(FInputModeGameOnly());
 	}
@@ -185,7 +212,7 @@ void AExceptionPlayerController::HandleInventoryChanged(const TArray<FBRInventor
 		}
 	}
 
-	PushInventoryToWidget();
+	RefreshInventoryUI();
 }
 
 void AExceptionPlayerController::HandleInventorySlotChanged(int32 SlotIndex, const FBRInventorySlot& Slot)
@@ -198,7 +225,7 @@ void AExceptionPlayerController::HandleInventorySlotChanged(int32 SlotIndex, con
 		}
 	}
 
-	PushInventorySlotToWidget(SlotIndex, Slot);
+	RefreshInventorySlot(SlotIndex, Slot);
 }
 
 void AExceptionPlayerController::BindInventoryWidgetToPawn()
@@ -206,7 +233,7 @@ void AExceptionPlayerController::BindInventoryWidgetToPawn()
 	UBRInventoryComponent* InventoryComponent = GetPlayerInventoryComponent();
 	if (!InventoryComponent || BoundInventoryComponent == InventoryComponent)
 	{
-		PushInventoryToWidget();
+		RefreshInventoryUI();
 		return;
 	}
 
@@ -214,7 +241,7 @@ void AExceptionPlayerController::BindInventoryWidgetToPawn()
 	BoundInventoryComponent = InventoryComponent;
 	BoundInventoryComponent->OnInventoryChanged.AddUniqueDynamic(this, &AExceptionPlayerController::HandleInventoryChanged);
 	BoundInventoryComponent->OnSlotChanged.AddUniqueDynamic(this, &AExceptionPlayerController::HandleInventorySlotChanged);
-	PushInventoryToWidget();
+	RefreshInventoryUI();
 }
 
 void AExceptionPlayerController::UnbindInventoryWidgetFromPawn()
@@ -229,7 +256,7 @@ void AExceptionPlayerController::UnbindInventoryWidgetFromPawn()
 	BoundInventoryComponent = nullptr;
 }
 
-void AExceptionPlayerController::PushInventoryToWidget()
+void AExceptionPlayerController::RefreshInventoryUI()
 {
 	UBRInventoryComponent* InventoryComponent = BoundInventoryComponent ? BoundInventoryComponent.Get() : GetPlayerInventoryComponent();
 	if (!InventoryComponent)
@@ -257,36 +284,36 @@ void AExceptionPlayerController::PushInventoryToWidget()
 		InventoryProperty->SetObjectPropertyValue(InventoryProperty->ContainerPtrToValuePtr<void>(InventoryWidget), InventoryComponent);
 	}
 
-	ProcessWidgetFunction(InventoryWidget, TEXT("SetInventoryComponent"), [InventoryComponent](UFunction* Function, uint8* Params)
+	CallWidgetFunc(InventoryWidget, TEXT("SetInventoryComponent"), [InventoryComponent](UFunction* Function, uint8* Params)
 	{
 		SetObjectParam(Function, Params, InventoryComponent);
 	});
 
 	const TArray<FBRInventorySlot> Slots = InventoryComponent->GetSlots();
-	ProcessWidgetFunction(InventoryWidget, TEXT("SetInventorySlots"), [&Slots](UFunction* Function, uint8* Params)
+	CallWidgetFunc(InventoryWidget, TEXT("SetInventorySlots"), [&Slots](UFunction* Function, uint8* Params)
 	{
 		SetInventorySlotsParam(Function, Params, Slots);
 	});
 
-	ProcessWidgetFunction(InventoryWidget, TEXT("RefreshInventory"), [](UFunction* Function, uint8* Params)
+	CallWidgetFunc(InventoryWidget, TEXT("RefreshInventory"), [](UFunction* Function, uint8* Params)
 	{
 	});
 }
 
-void AExceptionPlayerController::PushInventorySlotToWidget(int32 SlotIndex, const FBRInventorySlot& Slot)
+void AExceptionPlayerController::RefreshInventorySlot(int32 SlotIndex, const FBRInventorySlot& Slot)
 {
 	if (!InventoryWidget)
 	{
 		return;
 	}
 
-	ProcessWidgetFunction(InventoryWidget, TEXT("SetInventorySlot"), [SlotIndex, &Slot](UFunction* Function, uint8* Params)
+	CallWidgetFunc(InventoryWidget, TEXT("SetInventorySlot"), [SlotIndex, &Slot](UFunction* Function, uint8* Params)
 	{
 		SetSlotIndexParam(Function, Params, SlotIndex);
 		SetInventorySlotParam(Function, Params, Slot);
 	});
 
-	ProcessWidgetFunction(InventoryWidget, TEXT("RefreshInventory"), [](UFunction* Function, uint8* Params)
+	CallWidgetFunc(InventoryWidget, TEXT("RefreshInventory"), [](UFunction* Function, uint8* Params)
 	{
 	});
 }

@@ -62,16 +62,19 @@ void ABRPatternBossBase::ResetPatternBoss()
 void ABRPatternBossBase::SetCombatAIEnabled(bool bEnabled)
 {
 	Super::SetCombatAIEnabled(bEnabled);
-	if (!bEnabled)
-	{
-		ClearBaseTimers();
-	}
 }
 
 void ABRPatternBossBase::OnBossReset()
 {
 	LastAttackTime = -1000.0f;
+	NextAttackTime = -1000.0f;
+	LastPatternTimes.Reset();
 	ActivePatternIndex = INDEX_NONE;
+	LastPatternIndex = INDEX_NONE;
+	ActivePatternSnapshot = FBRBossPatternData();
+	bHasActivePattern = false;
+	bAttackHasImpacted = false;
+	bAttackSlotClaimed = false;
 	ClearBaseTimers();
 
 	if (MeshComponent)
@@ -87,16 +90,12 @@ void ABRPatternBossBase::OnBossReset()
 
 void ABRPatternBossBase::OnBossDeadInternal()
 {
-	ClearBaseTimers();
+	CancelBossAttack();
 }
 
 void ABRPatternBossBase::OnBossGroggyInternal()
 {
-	GetWorldTimerManager().ClearTimer(AttackWindupTimerHandle);
-	bIsAttacking = false;
-	ActivePatternIndex = INDEX_NONE;
-	NotifyCoordinatedAttackFinished();
-	NotifyBossAnimationStage(EBRBossAnimationStage::Idle);
+	CancelBossAttack();
 }
 
 void ABRPatternBossBase::OnBossRecoveredFromGroggyInternal()
@@ -106,7 +105,19 @@ void ABRPatternBossBase::OnBossRecoveredFromGroggyInternal()
 
 void ABRPatternBossBase::OnBossPhaseChanged(EBRBossPhase NewPhase)
 {
-	if (GEngine)
+	FBRBossPatternData PhaseEffectPattern;
+	PhaseEffectPattern.PatternName = TEXT("PhaseTransition");
+	PhaseEffectPattern.PatternType = EBRBossPatternType::AOE;
+	const FVector EffectScale(PhaseTransitionEffectScale);
+	SpawnPatternEffect(
+		ResolvePatternEffect(PhaseEffectPattern, false),
+		PhaseEffectPattern,
+		NAME_None,
+		TelegraphHeightOffset,
+		EffectScale);
+	PlayCameraFeedbackForActor(CurrentTarget, PhaseTransitionCameraShakeScale, 0.45f);
+
+	if (bShowDebug && GEngine)
 	{
 		GEngine->AddOnScreenDebugMessage(2012, 2.0f, FColor::Orange, TEXT("Pattern boss table switched to Phase 2"));
 	}
@@ -115,10 +126,7 @@ void ABRPatternBossBase::OnBossPhaseChanged(EBRBossPhase NewPhase)
 void ABRPatternBossBase::ClearBaseTimers()
 {
 	Super::ClearBaseTimers();
-	GetWorldTimerManager().ClearTimer(AttackWindupTimerHandle);
-	bIsAttacking = false;
-	ActivePatternIndex = INDEX_NONE;
-	NotifyCoordinatedAttackFinished();
+	CancelBossAttack();
 }
 
 FString ABRPatternBossBase::GetBossDebugName() const

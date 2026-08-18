@@ -12,13 +12,26 @@
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
 #include "Engine/Texture2D.h"
+#include "InputCoreTypes.h"
 #include "Styling/CoreStyle.h"
 
 void UBRInventorySlotWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
+	BindDesignerWidgets();
 	BuildSlotWidget();
 	RefreshVisuals();
+}
+
+FReply UBRInventorySlotWidget::NativeOnMouseButtonDown(const FGeometry& InGeometry, const FPointerEvent& InMouseEvent)
+{
+	if (SlotButton || InMouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
+	{
+		return Super::NativeOnMouseButtonDown(InGeometry, InMouseEvent);
+	}
+
+	HandleClicked();
+	return FReply::Handled();
 }
 
 void UBRInventorySlotWidget::SetSlotData(int32 NewSlotIndex, const FBRInventorySlot& NewInventorySlot)
@@ -38,7 +51,7 @@ void UBRInventorySlotWidget::HandleClicked()
 
 void UBRInventorySlotWidget::BuildSlotWidget()
 {
-	if (!WidgetTree || SlotButton)
+	if (!WidgetTree || WidgetTree->RootWidget)
 	{
 		return;
 	}
@@ -84,6 +97,35 @@ void UBRInventorySlotWidget::BuildSlotWidget()
 	if (UVerticalBoxSlot* QuantitySlot = ContentBox->AddChildToVerticalBox(QuantityText))
 	{
 		QuantitySlot->SetHorizontalAlignment(HAlign_Fill);
+	}
+}
+
+void UBRInventorySlotWidget::BindDesignerWidgets()
+{
+	if (!WidgetTree || !WidgetTree->RootWidget)
+	{
+		return;
+	}
+
+	if (UBorder* OutlineBorder = Cast<UBorder>(WidgetTree->FindWidget(TEXT("Border_Outline"))))
+	{
+		FrameBorder = OutlineBorder;
+	}
+	else if (UBorder* BackgroundBorder = Cast<UBorder>(WidgetTree->FindWidget(TEXT("Border_SlotBackground"))))
+	{
+		FrameBorder = BackgroundBorder;
+	}
+	if (UImage* Image = Cast<UImage>(WidgetTree->FindWidget(TEXT("Image_Icon"))))
+	{
+		IconImage = Image;
+	}
+	if (UTextBlock* Text = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Text_ItemName"))))
+	{
+		NameText = Text;
+	}
+	if (UTextBlock* Text = Cast<UTextBlock>(WidgetTree->FindWidget(TEXT("Text_Quantity"))))
+	{
+		QuantityText = Text;
 	}
 }
 

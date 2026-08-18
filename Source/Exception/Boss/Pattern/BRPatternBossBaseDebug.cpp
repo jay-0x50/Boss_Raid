@@ -17,8 +17,8 @@ void ABRPatternBossBase::DrawBossDebug() const
 	const float MaxHP = StatComponent ? StatComponent->GetMaxHP() : 0.0f;
 	const float CurrentGroggy = StatComponent ? StatComponent->GetCurrentGroggy() : 0.0f;
 	const float MaxGroggy = StatComponent ? StatComponent->GetMaxGroggy() : 0.0f;
-	const FString PatternText = AttackPatterns.IsValidIndex(ActivePatternIndex)
-		? AttackPatterns[ActivePatternIndex].PatternName.ToString()
+	const FString PatternText = bHasActivePattern
+		? ActivePatternSnapshot.PatternName.ToString()
 		: TEXT("None");
 
 	const FString DebugText = FString::Printf(
@@ -42,25 +42,28 @@ void ABRPatternBossBase::DrawBossDebug() const
 
 void ABRPatternBossBase::DrawActivePatternTelegraph() const
 {
-	if (!bDrawAttackTelegraph || !bIsAttacking || !AttackPatterns.IsValidIndex(ActivePatternIndex) || !GetWorld())
+	if (!bDrawAttackTelegraph || !bIsAttacking || !bHasActivePattern || bAttackHasImpacted || !GetWorld())
 	{
 		return;
 	}
 
-	const FBRBossPatternData& Pattern = AttackPatterns[ActivePatternIndex];
-	const FVector GroundOffset(0.0f, 0.0f, TelegraphHeightOffset);
-	const FVector AttackStart = GetActorLocation() + GroundOffset;
-	const FVector AttackForward = GetActorForwardVector();
+	const FBRBossPatternData& Pattern = ActivePatternSnapshot;
+	const FVector GroundOffset(0.0f, 0.0f, TelegraphHeightOffset - GroundTraceActorHalfHeight);
+	const FVector AttackStart = LockedAttackOrigin + GroundOffset;
+	const FVector AttackForward = Pattern.PatternType == EBRBossPatternType::Dash
+		? GetLockedDashDirection(Pattern)
+		: LockedAttackDirection;
 	const FVector AttackEnd = AttackStart + (AttackForward * Pattern.ForwardOffset);
 	const FColor TelegraphColor = BossPhase == EBRBossPhase::Phase2 ? FColor(255, 40, 0) : FColor(255, 135, 0);
 	constexpr float TelegraphDuration = 0.06f;
 
 	if (Pattern.PatternType == EBRBossPatternType::AOE)
 	{
+		const FVector AOECenter = GetAOECenter(Pattern, TelegraphHeightOffset);
 		DrawDebugCylinder(
 			GetWorld(),
-			AttackStart,
-			AttackStart + FVector(0.0f, 0.0f, 12.0f),
+			AOECenter,
+			AOECenter + FVector(0.0f, 0.0f, 12.0f),
 			Pattern.Radius,
 			48,
 			TelegraphColor,
@@ -68,7 +71,6 @@ void ABRPatternBossBase::DrawActivePatternTelegraph() const
 			TelegraphDuration,
 			0,
 			3.0f);
-		DrawDebugString(GetWorld(), AttackStart + FVector(0.0f, 0.0f, 80.0f), Pattern.PatternName.ToString(), nullptr, TelegraphColor, TelegraphDuration);
 		return;
 	}
 
@@ -77,10 +79,9 @@ void ABRPatternBossBase::DrawActivePatternTelegraph() const
 
 	if (Pattern.PatternType == EBRBossPatternType::Dash && Pattern.DashDistance > 0.0f)
 	{
-		const FVector DashEnd = AttackStart + (AttackForward * Pattern.DashDistance);
+		const FVector DashEnd = AttackStart + (AttackForward * (Pattern.DashDistance + Pattern.ForwardOffset));
 		DrawDebugLine(GetWorld(), AttackStart, DashEnd, FColor::Red, false, TelegraphDuration, 0, 5.0f);
 		DrawDebugSphere(GetWorld(), DashEnd, Pattern.Radius * 0.75f, 20, FColor::Red, false, TelegraphDuration, 0, 2.0f);
 	}
 
-	DrawDebugString(GetWorld(), AttackEnd + FVector(0.0f, 0.0f, 80.0f), Pattern.PatternName.ToString(), nullptr, TelegraphColor, TelegraphDuration);
 }

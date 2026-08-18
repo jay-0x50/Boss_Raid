@@ -72,10 +72,11 @@ void AExceptionCharacter::Tick(float DeltaSeconds)
 void AExceptionCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+	SaveBaseStats();
 
 	if (InventoryComponent)
 	{
-		InventoryComponent->OnItemUsed.AddUniqueDynamic(this, &AExceptionCharacter::HandleInventoryItemUsed);
+		InventoryComponent->TryUseItem.BindUObject(this, &AExceptionCharacter::TryUseInventoryItem);
 	}
 
 	RestoreHPAndStamina();

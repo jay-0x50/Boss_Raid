@@ -32,6 +32,7 @@ void UBRInventoryWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
 	BuildInventoryWidget();
+	BindDesignerWidgets();
 	RefreshInventory();
 }
 
@@ -44,7 +45,7 @@ void UBRInventoryWidget::SetInventoryComponent(UBRInventoryComponent* NewInvento
 void UBRInventoryWidget::SetInventorySlots(const TArray<FBRInventorySlot>& Slots)
 {
 	CachedSlots = Slots;
-	RebuildFilteredSlots();
+	RefreshSlotList();
 }
 
 void UBRInventoryWidget::SetInventorySlot(int32 SlotIndex, const FBRInventorySlot& InventorySlot)
@@ -60,7 +61,7 @@ void UBRInventoryWidget::SetInventorySlot(int32 SlotIndex, const FBRInventorySlo
 	}
 
 	CachedSlots[SlotIndex] = InventorySlot;
-	RebuildFilteredSlots();
+	RefreshSlotList();
 }
 
 void UBRInventoryWidget::RefreshInventory()
@@ -68,11 +69,113 @@ void UBRInventoryWidget::RefreshInventory()
 	if (!InventoryComponent)
 	{
 		CachedSlots.Reset();
-		RebuildFilteredSlots();
+		RefreshSlotList();
 		return;
 	}
 
 	SetInventorySlots(InventoryComponent->GetSlots());
+}
+
+void UBRInventoryWidget::BindDesignerWidgets()
+{
+	if (!WidgetTree)
+	{
+		return;
+	}
+
+	auto FindButton = [this](const TCHAR* Name)
+	{
+		return Cast<UButton>(WidgetTree->FindWidget(FName(Name)));
+	};
+	auto FindText = [this](const TCHAR* Name)
+	{
+		return Cast<UTextBlock>(WidgetTree->FindWidget(FName(Name)));
+	};
+
+	if (UButton* CloseButton = FindButton(TEXT("CloseButton")))
+	{
+		CloseButton->OnClicked.AddUniqueDynamic(this, &UBRInventoryWidget::HandleCloseClicked);
+	}
+
+	const TCHAR* ButtonNames[] =
+	{
+		TEXT("AllTabButton"),
+		TEXT("EquipmentTabButton"),
+		TEXT("ConsumableTabButton"),
+		TEXT("KeyItemTabButton"),
+		TEXT("QuestItemTabButton")
+	};
+	const TCHAR* TextNames[] =
+	{
+		TEXT("AllTabText"),
+		TEXT("EquipmentTabText"),
+		TEXT("ConsumableTabText"),
+		TEXT("KeyItemTabText"),
+		TEXT("QuestItemTabText")
+	};
+
+	TabButtons.SetNum(UE_ARRAY_COUNT(ButtonNames));
+	TabTexts.SetNum(UE_ARRAY_COUNT(TextNames));
+	for (int32 Index = 0; Index < UE_ARRAY_COUNT(ButtonNames); ++Index)
+	{
+		if (UButton* Button = FindButton(ButtonNames[Index]))
+		{
+			TabButtons[Index] = Button;
+		}
+		if (UTextBlock* Text = FindText(TextNames[Index]))
+		{
+			TabTexts[Index] = Text;
+		}
+	}
+
+	if (TabButtons.IsValidIndex(0) && TabButtons[0])
+	{
+		TabButtons[0]->OnClicked.AddUniqueDynamic(this, &UBRInventoryWidget::HandleAllTabClicked);
+	}
+	if (TabButtons.IsValidIndex(1) && TabButtons[1])
+	{
+		TabButtons[1]->OnClicked.AddUniqueDynamic(this, &UBRInventoryWidget::HandleEquipmentTabClicked);
+	}
+	if (TabButtons.IsValidIndex(2) && TabButtons[2])
+	{
+		TabButtons[2]->OnClicked.AddUniqueDynamic(this, &UBRInventoryWidget::HandleConsumableTabClicked);
+	}
+	if (TabButtons.IsValidIndex(3) && TabButtons[3])
+	{
+		TabButtons[3]->OnClicked.AddUniqueDynamic(this, &UBRInventoryWidget::HandleKeyItemTabClicked);
+	}
+	if (TabButtons.IsValidIndex(4) && TabButtons[4])
+	{
+		TabButtons[4]->OnClicked.AddUniqueDynamic(this, &UBRInventoryWidget::HandleQuestItemTabClicked);
+	}
+
+	if (UTextBlock* Text = FindText(TEXT("CountText")))
+	{
+		InventoryCountText = Text;
+	}
+	if (UTextBlock* Text = FindText(TEXT("ItemName")))
+	{
+		ItemNameText = Text;
+	}
+	if (UTextBlock* Text = FindText(TEXT("ItemType")))
+	{
+		ItemTypeText = Text;
+	}
+	if (UTextBlock* Text = FindText(TEXT("ItemEffect")))
+	{
+		ItemEffectText = Text;
+	}
+	if (UTextBlock* Text = FindText(TEXT("ItemDescription")))
+	{
+		ItemDescriptionText = Text;
+	}
+
+	if (UUniformGridPanel* SlotGrid = Cast<UUniformGridPanel>(WidgetTree->FindWidget(TEXT("SlotGrid"))))
+	{
+		BuildInventorySlots(SlotGrid);
+	}
+
+	UpdateTabVisuals();
 }
 
 void UBRInventoryWidget::HandleCloseClicked()
@@ -325,8 +428,13 @@ void UBRInventoryWidget::BuildInventorySlots(UUniformGridPanel* SlotGrid)
 	SlotWidgets.SetNum(DisplaySlotCount);
 	for (int32 DisplayIndex = 0; DisplayIndex < DisplaySlotCount; ++DisplayIndex)
 	{
-		UBRInventorySlotWidget* SlotWidget = CreateWidget<UBRInventorySlotWidget>(GetOwningPlayer(), UBRInventorySlotWidget::StaticClass());
+		UClass* WidgetClass = SlotWidgetClass ? SlotWidgetClass.Get() : UBRInventorySlotWidget::StaticClass();
+		UBRInventorySlotWidget* SlotWidget = CreateWidget<UBRInventorySlotWidget>(GetOwningPlayer(), WidgetClass);
 		SlotWidgets[DisplayIndex] = SlotWidget;
+		if (!SlotWidget)
+		{
+			continue;
+		}
 		if (UUniformGridSlot* GridSlot = SlotGrid->AddChildToUniformGrid(SlotWidget, DisplayIndex / 6, DisplayIndex % 6))
 		{
 			GridSlot->SetHorizontalAlignment(HAlign_Center);
@@ -335,7 +443,7 @@ void UBRInventoryWidget::BuildInventorySlots(UUniformGridPanel* SlotGrid)
 	}
 }
 
-void UBRInventoryWidget::RebuildFilteredSlots()
+void UBRInventoryWidget::RefreshSlotList()
 {
 	FilteredSlotIndices.Reset();
 	for (int32 SlotIndex = 0; SlotIndex < CachedSlots.Num(); ++SlotIndex)
@@ -394,7 +502,7 @@ void UBRInventoryWidget::SetActiveTab(EBRInventoryTab NewTab)
 
 	ActiveTab = NewTab;
 	UpdateTabVisuals();
-	RebuildFilteredSlots();
+	RefreshSlotList();
 }
 
 bool UBRInventoryWidget::DoesSlotMatchTab(const FBRInventorySlot& InventorySlot) const
@@ -409,7 +517,7 @@ bool UBRInventoryWidget::DoesSlotMatchTab(const FBRInventorySlot& InventorySlot)
 		return true;
 	}
 
-	const EBRInventoryItemCategory Category = GetResolvedCategory(InventorySlot);
+	const EBRInventoryItemCategory Category = GetItemType(InventorySlot);
 	switch (ActiveTab)
 	{
 	case EBRInventoryTab::Equipment:
@@ -425,7 +533,7 @@ bool UBRInventoryWidget::DoesSlotMatchTab(const FBRInventorySlot& InventorySlot)
 	}
 }
 
-EBRInventoryItemCategory UBRInventoryWidget::GetResolvedCategory(const FBRInventorySlot& InventorySlot) const
+EBRInventoryItemCategory UBRInventoryWidget::GetItemType(const FBRInventorySlot& InventorySlot) const
 {
 	if (InventorySlot.Item.Category != EBRInventoryItemCategory::Misc)
 	{
@@ -503,7 +611,7 @@ void UBRInventoryWidget::UpdateDetailsPanel(const FBRInventorySlot& InventorySlo
 	const FText ItemName = InventorySlot.Item.DisplayName.IsEmpty() ? FText::FromName(InventorySlot.Item.ItemId) : InventorySlot.Item.DisplayName;
 	ItemNameText->SetText(ItemName);
 
-	const EBRInventoryItemCategory Category = GetResolvedCategory(InventorySlot);
+	const EBRInventoryItemCategory Category = GetItemType(InventorySlot);
 	ItemTypeText->SetText(FText::FromString(FString::Printf(TEXT("%s  /  x%d"), *GetCategoryDisplayName(Category), InventorySlot.Quantity)));
 
 	FString EffectText = TEXT("No active effect.");

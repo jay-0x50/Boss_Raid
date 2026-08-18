@@ -17,6 +17,7 @@ public class Exception : ModuleRules
 			"AIModule",
 			"StateTreeModule",
 			"GameplayStateTreeModule",
+			"Niagara",
 			"UMG",
 			"Slate",
 			"SlateCore"

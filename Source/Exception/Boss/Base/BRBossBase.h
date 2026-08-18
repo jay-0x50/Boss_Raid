@@ -9,9 +9,11 @@ class ABRBossAIController;
 class UBRStatComponent;
 class UBehaviorTree;
 class USceneComponent;
+class UCapsuleComponent;
 class UStaticMeshComponent;
 class USkeletalMeshComponent;
 class UAnimationAsset;
+class UCameraShakeBase;
 class ABRBossTeamCoordinator;
 
 UENUM(BlueprintType)
@@ -47,7 +49,8 @@ enum class EBRBossAnimationStage : uint8
 	PatternImpact,
 	PatternRecovery,
 	Groggy,
-	Death
+	Death,
+	PhaseTransition
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FBRBossStateEvent);
@@ -91,6 +94,9 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="Exception|Boss")
 	bool IsAttacking() const { return bIsAttacking; }
+
+	UFUNCTION(BlueprintPure, Category="Exception|Boss")
+	bool IsPhaseTransitioning() const { return bIsPhaseTransitioning; }
 
 	UFUNCTION(BlueprintPure, Category="Exception|Boss")
 	EBRBossPhase GetBossPhase() const { return BossPhase; }
@@ -183,6 +189,9 @@ public:
 	FBRBossPhaseChanged OnPhaseChanged;
 
 	UPROPERTY(BlueprintAssignable, Category="Exception|Events")
+	FBRBossStateEvent OnPhaseTransitionFinished;
+
+	UPROPERTY(BlueprintAssignable, Category="Exception|Events")
 	FBRBossAnimationStageEvent OnAnimationStageChanged;
 
 protected:
@@ -206,6 +215,9 @@ protected:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
 	TObjectPtr<USceneComponent> SceneRoot;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
+	TObjectPtr<UCapsuleComponent> HitCapsule;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
 	TObjectPtr<USceneComponent> VisualRoot;
@@ -258,6 +270,12 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Phase", meta=(ClampMin="0.0", ClampMax="1.0"))
 	float Phase2StartHPRatio = 0.5f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Phase", meta=(ClampMin="0.0", Units="s"))
+	float PhaseTransitionDuration = 1.35f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Phase")
+	bool bInvulnerableDuringPhaseTransition = true;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Groggy", meta=(ClampMin="0.1", Units="s"))
 	float GroggyDuration = 3.0f;
 
@@ -285,6 +303,33 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation")
 	TMap<FName, TObjectPtr<UAnimationAsset>> ActionAnimations;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|Fallback")
+	bool bUseProceduralIdleFallback = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|Fallback", meta=(ClampMin="0.0", Units="cm"))
+	float ProceduralIdleBobAmplitude = 3.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|Fallback", meta=(ClampMin="0.0", Units="Hz"))
+	float ProceduralIdleFrequency = 0.65f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|Fallback", meta=(ClampMin="0.0", Units="deg"))
+	float ProceduralIdleLeanAngle = 1.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Exception|Feedback")
+	TSubclassOf<UCameraShakeBase> CombatHitCameraShakeClass;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Feedback", meta=(ClampMin="0.0"))
+	float BossReceivedHitCameraShakeScale = 0.38f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Feedback", meta=(ClampMin="0.0", ClampMax="1.0"))
+	float BossReceivedHitRumbleIntensity = 0.12f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Feedback", meta=(ClampMin="0.0", Units="cm"))
+	float ProceduralHitReactionDistance = 9.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Feedback", meta=(ClampMin="0.01", Units="s"))
+	float ProceduralHitReactionDuration = 0.14f;
+
 	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category="Exception|Team")
 	TObjectPtr<ABRBossTeamCoordinator> TeamCoordinator;
 
@@ -306,6 +351,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|State")
 	bool bIsBeingExecuted = false;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|State")
+	bool bIsPhaseTransitioning = false;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Debug")
 	bool bShowDebug = false;
 
@@ -319,10 +367,16 @@ protected:
 	TObjectPtr<UAnimationAsset> CurrentBossAnimationAsset;
 
 	float VerticalFallSpeed = 0.0f;
+	float ProceduralIdleTime = 0.0f;
+	float ProceduralIdleBlendAlpha = 0.0f;
+	float ProceduralHitReactionTime = 0.0f;
+	FVector ProceduralHitReactionDirection = FVector::BackwardVector;
+	EBRBossAnimationStage CurrentAnimationStage = EBRBossAnimationStage::Idle;
 
 	FTransform InitialBossTransform = FTransform::Identity;
 
 	FTimerHandle GroggyTimerHandle;
+	FTimerHandle PhaseTransitionTimerHandle;
 
 	UFUNCTION()
 	virtual void HandleDead();
@@ -338,7 +392,13 @@ protected:
 
 	void RecoverFromGroggy();
 	void RefreshPhaseByHP();
+	void BeginPhaseTransition();
+	void FinishPhaseTransition();
 	void ApplyMeshVisualTransform();
+	void UpdateProceduralIdleMotion(float DeltaSeconds);
+	void StartProceduralHitReaction(AActor* DamageCauser);
+	void UpdateProceduralHitReaction(float DeltaSeconds);
+	void PlayCameraFeedbackForActor(AActor* FeedbackActor, float ShakeScale, float RumbleIntensity) const;
 	void SetBossAnimationPlaying(bool bShouldPlay);
 	void PlayBossStageAnimation(EBRBossAnimationStage Stage, FName ActionName);
 	void ApplyGroundGravity(float DeltaSeconds);

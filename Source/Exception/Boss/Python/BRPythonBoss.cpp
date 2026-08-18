@@ -43,7 +43,7 @@ void ABRPythonBoss::OnBossPhaseChanged(EBRBossPhase NewPhase)
 	Super::OnBossPhaseChanged(NewPhase);
 	ConfigurePythonPatterns();
 
-	if (GEngine)
+	if (bShowDebug && GEngine)
 	{
 		GEngine->AddOnScreenDebugMessage(2020, 2.0f, FColor::Orange, TEXT("Python Twin Boss Phase Pattern Refresh"));
 	}
@@ -59,6 +59,7 @@ void ABRPythonBoss::ConfigurePythonPatterns()
 
 		FBRBossPatternData TailSweepCombo;
 		TailSweepCombo.PatternName = TEXT("Aurathos_TailSweepCombo");
+		TailSweepCombo.ImpactSocketName = TEXT("FX_Tail");
 		TailSweepCombo.PatternType = EBRBossPatternType::Melee;
 		TailSweepCombo.MinRange = 0.0f;
 		TailSweepCombo.MaxRange = 430.0f;
@@ -73,6 +74,7 @@ void ABRPythonBoss::ConfigurePythonPatterns()
 
 		FBRBossPatternData ShadowDash;
 		ShadowDash.PatternName = TEXT("Aurathos_ShadowDash");
+		ShadowDash.ImpactSocketName = TEXT("FX_FrontRight");
 		ShadowDash.PatternType = EBRBossPatternType::Dash;
 		ShadowDash.MinRange = 360.0f;
 		ShadowDash.MaxRange = 850.0f;
@@ -89,6 +91,7 @@ void ABRPythonBoss::ConfigurePythonPatterns()
 		FBRBossPatternData LavaEruption;
 		LavaEruption.PatternName = TEXT("Aurathos_LavaEruption");
 		LavaEruption.PatternType = EBRBossPatternType::AOE;
+		LavaEruption.bCenterAOEOnTarget = true;
 		LavaEruption.MinRange = 0.0f;
 		LavaEruption.MaxRange = 420.0f;
 		LavaEruption.Damage = 24.0f * AurathosDamageMultiplier;
@@ -105,6 +108,7 @@ void ABRPythonBoss::ConfigurePythonPatterns()
 
 		FBRBossPatternData FrostBeam;
 		FrostBeam.PatternName = TEXT("Vethara_FrostBeam");
+		FrostBeam.ImpactSocketName = TEXT("FX_Mouth");
 		FrostBeam.PatternType = EBRBossPatternType::Melee;
 		FrostBeam.MinRange = RangedComfortMinDistance;
 		FrostBeam.MaxRange = 1450.0f;
@@ -119,6 +123,7 @@ void ABRPythonBoss::ConfigurePythonPatterns()
 
 		FBRBossPatternData RetreatStrike;
 		RetreatStrike.PatternName = TEXT("Vethara_ThunderDashRetreat");
+		RetreatStrike.ImpactSocketName = TEXT("FX_FrontRight");
 		RetreatStrike.PatternType = EBRBossPatternType::Dash;
 		RetreatStrike.MinRange = 0.0f;
 		RetreatStrike.MaxRange = 430.0f;
@@ -138,6 +143,7 @@ void ABRPythonBoss::ConfigurePythonPatterns()
 		FBRBossPatternData BlizzardZone;
 		BlizzardZone.PatternName = TEXT("Vethara_BlizzardZone");
 		BlizzardZone.PatternType = EBRBossPatternType::AOE;
+		BlizzardZone.bCenterAOEOnTarget = true;
 		BlizzardZone.MinRange = 450.0f;
 		BlizzardZone.MaxRange = 1000.0f;
 		BlizzardZone.Damage = 20.0f * VetharaDamageMultiplier;
@@ -150,6 +156,7 @@ void ABRPythonBoss::ConfigurePythonPatterns()
 
 		FBRBossPatternData PanicBite;
 		PanicBite.PatternName = TEXT("Vethara_PanicBite");
+		PanicBite.ImpactSocketName = TEXT("FX_Mouth");
 		PanicBite.PatternType = EBRBossPatternType::Melee;
 		PanicBite.MinRange = 0.0f;
 		PanicBite.MaxRange = 260.0f;

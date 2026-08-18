@@ -181,9 +181,9 @@ protected:
 	void UnbindPlayerHUDFromPawn();
 	void BindInventoryWidgetToPawn();
 	void UnbindInventoryWidgetFromPawn();
-	void PushInventoryToWidget();
-	void PushInventorySlotToWidget(int32 SlotIndex, const FBRInventorySlot& Slot);
-	void UpdateRuntimeGauge(FName GaugeWidgetName, const FText& GaugeText, float NormalizedValue, const FLinearColor& GaugeColor);
+	void RefreshInventoryUI();
+	void RefreshInventorySlot(int32 SlotIndex, const FBRInventorySlot& Slot);
+	void UpdateGauge(FName GaugeWidgetName, const FText& GaugeText, float NormalizedValue, const FLinearColor& GaugeColor);
 	void UpdateHPGauge(float CurrentValue, float MaxValue, float NormalizedValue);
 	void UpdateStaminaGauge(float CurrentValue, float MaxValue, float NormalizedValue);
 	void UpdateGroggyGauge(float NormalizedValue);
