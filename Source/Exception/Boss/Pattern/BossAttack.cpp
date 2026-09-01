@@ -9,13 +9,13 @@
 #include "Kismet/GameplayStatics.h"
 #include "NiagaraFunctionLibrary.h"
 
-int32 ABRPatternBossBase::SelectPattern(float DistanceToTarget) const
+int32 ABRPatternBossBase::PickAttack(float PlayerDist) const
 {
 	const int32 PatternCount = AttackPatterns.Num();
 	for (int32 Offset = 1; Offset <= PatternCount; ++Offset)
 	{
 		const int32 Index = (LastPatternIndex + Offset) % PatternCount;
-		if (CanStartPattern(AttackPatterns[Index], DistanceToTarget))
+		if (CanUseAttack(AttackPatterns[Index], PlayerDist))
 		{
 			return Index;
 		}
@@ -24,7 +24,7 @@ int32 ABRPatternBossBase::SelectPattern(float DistanceToTarget) const
 	return INDEX_NONE;
 }
 
-bool ABRPatternBossBase::CanStartPattern(const FBRBossPatternData& Pattern, float DistanceToTarget) const
+bool ABRPatternBossBase::CanUseAttack(const FBRBossPatternData& Attack, float PlayerDist) const
 {
 	const UWorld* World = GetWorld();
 	if (!World || bIsPhaseTransitioning || !IsValid(CurrentTarget))
@@ -32,13 +32,13 @@ bool ABRPatternBossBase::CanStartPattern(const FBRBossPatternData& Pattern, floa
 		return false;
 	}
 
-	const bool bPhaseEnabled = BossPhase == EBRBossPhase::Phase1 ? Pattern.bEnableInPhase1 : Pattern.bEnableInPhase2;
-	if (!bPhaseEnabled || DistanceToTarget < Pattern.MinRange || DistanceToTarget > Pattern.MaxRange)
+	const bool bPhaseEnabled = BossPhase == EBRBossPhase::Phase1 ? Attack.bEnableInPhase1 : Attack.bEnableInPhase2;
+	if (!bPhaseEnabled || PlayerDist < Attack.MinRange || PlayerDist > Attack.MaxRange)
 	{
 		return false;
 	}
 
-	if (Pattern.bRequiresTeamMateNear && !IsTeamMateWithin(Pattern.TeamMateNearDistance))
+	if (Attack.bRequiresTeamMateNear && !IsTeamMateWithin(Attack.TeamMateNearDistance))
 	{
 		return false;
 	}
@@ -49,14 +49,14 @@ bool ABRPatternBossBase::CanStartPattern(const FBRBossPatternData& Pattern, floa
 		return false;
 	}
 
-	const float* LastPatternTime = LastPatternTimes.Find(Pattern.PatternName);
-	return !LastPatternTime || Now - *LastPatternTime >= GetPatternCooldown(Pattern);
+	const float* LastPatternTime = LastPatternTimes.Find(Attack.PatternName);
+	return !LastPatternTime || Now - *LastPatternTime >= GetAttackCool(Attack);
 }
 
-float ABRPatternBossBase::GetPatternCooldown(const FBRBossPatternData& Pattern) const
+float ABRPatternBossBase::GetAttackCool(const FBRBossPatternData& Attack) const
 {
 	const float PhaseMultiplier = BossPhase == EBRBossPhase::Phase2 ? Phase2CooldownMultiplier : 1.0f;
-	return Pattern.Cooldown * PhaseMultiplier;
+	return Attack.Cooldown * PhaseMultiplier;
 }
 
 UNiagaraSystem* ABRPatternBossBase::ResolvePatternEffect(const FBRBossPatternData& Pattern, bool bTelegraph) const

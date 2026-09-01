@@ -9,10 +9,10 @@ ABRSelvaraBoss::ABRSelvaraBoss()
 	GroggyDuration = 3.6f;
 	Phase2StartHPRatio = 0.5f;
 	DetectionRange = 2200.0f;
-	MoveSpeed = 135.0f;
+	RunSpeed = 135.0f;
 	Phase2MoveSpeedMultiplier = 1.18f;
 	Phase2CooldownMultiplier = 0.72f;
-	RotationInterpSpeed = 0.0f;
+	TurnSpeed = 0.0f;
 	MeleeStandbyDistance = 600.0f;
 	RangedStandbyDistance = 980.0f;
 	RangedComfortMinDistance = 540.0f;

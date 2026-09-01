@@ -37,10 +37,12 @@ void AExceptionCharacter::RestoreHPAndStamina()
 	GetWorldTimerManager().ClearTimer(ParryTimerHandle);
 	GetWorldTimerManager().ClearTimer(RespawnTimerHandle);
 	GetWorldTimerManager().ClearTimer(ExecutionTimerHandle);
+	GetWorldTimerManager().ClearTimer(ExecHitTimer);
 	SetCombatState(EBRPlayerCombatState::Idle);
 	bIsInvincible = false;
 	bIsParryActive = false;
 	PendingExecutionTarget = nullptr;
+	ResetExecCam();
 	GetCharacterMovement()->SetMovementMode(MOVE_Walking);
 	GetCharacterMovement()->StopMovementImmediately();
 	ClearLockOn();
@@ -77,6 +79,7 @@ void AExceptionCharacter::ApplySavedStats(float SavedHP, float SavedStamina)
 	GetWorldTimerManager().ClearTimer(ParryTimerHandle);
 	GetWorldTimerManager().ClearTimer(RespawnTimerHandle);
 	GetWorldTimerManager().ClearTimer(ExecutionTimerHandle);
+	GetWorldTimerManager().ClearTimer(ExecHitTimer);
 
 	CurrentHP = FMath::Clamp(SavedHP, 1.0f, MaxHP);
 	CurrentStamina = FMath::Clamp(SavedStamina, 0.0f, MaxStamina);
@@ -84,6 +87,7 @@ void AExceptionCharacter::ApplySavedStats(float SavedHP, float SavedStamina)
 	bIsInvincible = false;
 	bIsParryActive = false;
 	PendingExecutionTarget = nullptr;
+	ResetExecCam();
 	GetCharacterMovement()->SetMovementMode(MOVE_Walking);
 	GetCharacterMovement()->StopMovementImmediately();
 	ClearLockOn();
@@ -321,8 +325,13 @@ void AExceptionCharacter::CollectHiddenFragment(int32 Amount)
 
 void AExceptionCharacter::RefreshHiddenStoryRewards()
 {
-	if (!InventoryComponent || HasInventoryItem(TEXT("Weapon_MimikatzAuthoritySeized")))
+	if (!InventoryComponent)
 	{
+		return;
+	}
+	if (HasInventoryItem(TEXT("Weapon_MimikatzAuthoritySeized")))
+	{
+		SetRootWeapon(true);
 		return;
 	}
 
@@ -340,6 +349,8 @@ void AExceptionCharacter::RefreshHiddenStoryRewards()
 				{
 					InventoryComponent->MoveSlot(HiddenWeaponSlot, 22);
 				}
+
+				SetRootWeapon(true);
 
 				if (GEngine)
 				{
@@ -385,6 +396,7 @@ bool AExceptionCharacter::TryUseInventoryItem(int32 SlotIndex, const FBRInventor
 		AddUpgradePoints(FMath::Max(1, FMath::RoundToInt(Slot.Item.EffectValue)));
 		return true;
 	case EBRInventoryItemEffect::HiddenRootWeapon:
+		SetRootWeapon(true);
 		if (GEngine)
 		{
 			GEngine->AddOnScreenDebugMessage(1012, 2.0f, FColor::Purple, TEXT("Mimikatz, Authority Seized is already bound."));
@@ -436,7 +448,7 @@ FBRInventoryItemDefinition AExceptionCharacter::MakeHiddenRootWeaponItem() const
 	Item.bUsable = true;
 	Item.bConsumeOnUse = false;
 	Item.Effect = EBRInventoryItemEffect::HiddenRootWeapon;
-	Item.EffectValue = HiddenRootWeaponCMDDamageMultiplier;
+	Item.EffectValue = RootCmdDmg;
 	return Item;
 }
 

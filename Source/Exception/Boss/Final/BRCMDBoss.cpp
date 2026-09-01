@@ -11,10 +11,10 @@ ABRCMDBoss::ABRCMDBoss()
 	GroggyDuration = 3.0f;
 	Phase2StartHPRatio = 0.45f;
 	DetectionRange = 2800.0f;
-	MoveSpeed = 260.0f;
+	RunSpeed = 260.0f;
 	Phase2MoveSpeedMultiplier = 1.18f;
 	Phase2CooldownMultiplier = 0.62f;
-	RotationInterpSpeed = 8.0f;
+	TurnSpeed = 8.0f;
 	MeleeStandbyDistance = 420.0f;
 	RangedStandbyDistance = 1200.0f;
 	RangedComfortMinDistance = 700.0f;

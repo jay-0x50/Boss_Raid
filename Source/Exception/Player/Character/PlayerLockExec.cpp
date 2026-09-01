@@ -146,7 +146,7 @@ static float GetExecutionDistanceSq2D(const AExceptionCharacter* Player, const A
 ABRBossBase* AExceptionCharacter::FindExecutionTarget() const
 {
 	ABRBossBase* BestTarget = Cast<ABRBossBase>(LockOnTarget);
-	if (BestTarget && BestTarget->CanBeExecuted() && GetExecutionDistanceSq2D(this, BestTarget) <= FMath::Square(ExecutionRange))
+	if (BestTarget && BestTarget->CanBeExecuted() && GetExecutionDistanceSq2D(this, BestTarget) <= FMath::Square(ExecRange))
 	{
 		return BestTarget;
 	}
@@ -154,7 +154,7 @@ ABRBossBase* AExceptionCharacter::FindExecutionTarget() const
 	TArray<AActor*> Bosses;
 	UGameplayStatics::GetAllActorsOfClass(this, ABRBossBase::StaticClass(), Bosses);
 
-	float BestDistanceSq = FMath::Square(ExecutionRange);
+	float BestDistanceSq = FMath::Square(ExecRange);
 	BestTarget = nullptr;
 	for (AActor* Candidate : Bosses)
 	{
@@ -190,12 +190,16 @@ void AExceptionCharacter::StartExecution(ABRBossBase* Target)
 	bIsParryActive = false;
 	SetCombatState(EBRPlayerCombatState::Execution);
 	ClearLockOn();
+	CameraBoom->bDoCollisionTest = false;
+	CameraBoom->TargetArmLength = ExecCamLen;
+	CameraBoom->TargetOffset = FVector(0.0f, 0.0f, 80.0f);
+	CameraBoom->SocketOffset = ExecCamSide;
 	GetCharacterMovement()->StopMovementImmediately();
 	GetCharacterMovement()->SetMovementMode(MOVE_None);
 
 	const FVector ToPlayer = (GetActorLocation() - Target->GetActorLocation()).GetSafeNormal2D();
 	const FVector SnapDirection = ToPlayer.IsNearlyZero() ? -Target->GetActorForwardVector() : ToPlayer;
-	const FVector SnapLocation = Target->GetActorLocation() + (SnapDirection * ExecutionSnapDistance);
+	const FVector SnapLocation = Target->GetActorLocation() + (SnapDirection * ExecGap);
 	SetActorLocation(SnapLocation, false, nullptr, ETeleportType::TeleportPhysics);
 
 	const FVector ToTarget = Target->GetActorLocation() - GetActorLocation();
@@ -203,6 +207,7 @@ void AExceptionCharacter::StartExecution(ABRBossBase* Target)
 	Target->SetActorRotation(FRotationMatrix::MakeFromX(FVector(-ToTarget.X, -ToTarget.Y, 0.0f)).Rotator());
 
 	PlayOptionalMontage(ExecutionMontage);
+	StartRootSwing(true);
 	BP_ExecutionStarted(Target);
 
 	if (GEngine)
@@ -210,24 +215,67 @@ void AExceptionCharacter::StartExecution(ABRBossBase* Target)
 		GEngine->AddOnScreenDebugMessage(1011, 1.2f, FColor::Purple, TEXT("Player Execution"));
 	}
 
-	GetWorldTimerManager().SetTimer(ExecutionTimerHandle, this, &AExceptionCharacter::FinishExecution, ExecutionDuration, false);
+	ExecDmg = Target->GetMaxHP() * ExecDmgRate;
+	GetWorldTimerManager().SetTimer(ExecHitTimer, this, &AExceptionCharacter::DoExecHit, FMath::Min(ExecHitTime, ExecTime * 0.85f), false);
+	GetWorldTimerManager().SetTimer(ExecutionTimerHandle, this, &AExceptionCharacter::FinishExecution, ExecTime, false);
+}
+
+void AExceptionCharacter::DoExecHit()
+{
+	ABRBossBase* Target = PendingExecutionTarget.Get();
+	if (Target && !Target->IsDead())
+	{
+		Target->CompleteExecution(ExecDmg, this);
+	}
+	StartRootSwing(true);
 }
 
 void AExceptionCharacter::FinishExecution()
 {
+	GetWorldTimerManager().ClearTimer(ExecHitTimer);
 	ABRBossBase* Target = PendingExecutionTarget.Get();
-	float AppliedDamage = 0.0f;
 	if (Target && !Target->IsDead())
 	{
-		AppliedDamage = Target->GetMaxHP() * ExecutionDamageMaxHPRatio;
-		Target->CompleteExecution(AppliedDamage, this);
+		// 이미 타격 타이머가 실행됐다면 CompleteExecution이 false로 끝나므로 중복 피해는 없다.
+		DoExecHit();
 	}
 
 	PendingExecutionTarget = nullptr;
 	bIsInvincible = false;
 	GetCharacterMovement()->SetMovementMode(MOVE_Walking);
 	SetCombatState(EBRPlayerCombatState::Idle);
-	BP_ExecutionFinished(Target, AppliedDamage);
+	ResetExecCam();
+	BP_ExecutionFinished(Target, ExecDmg);
+	ExecDmg = 0.0f;
+}
+
+void AExceptionCharacter::UpdateExecCam(float DeltaSeconds)
+{
+	ABRBossBase* Target = PendingExecutionTarget.Get();
+	if (CombatState != EBRPlayerCombatState::Execution || !Target || !FollowCamera)
+	{
+		return;
+	}
+
+	const FVector Focus = Target->GetActorLocation() + FVector(0.0f, 0.0f, 100.0f);
+	if (AController* CurrentController = GetController())
+	{
+		const FRotator WantRot = (Focus - FollowCamera->GetComponentLocation()).Rotation();
+		CurrentController->SetControlRotation(FMath::RInterpTo(CurrentController->GetControlRotation(), WantRot, DeltaSeconds, 7.0f));
+	}
+}
+
+void AExceptionCharacter::ResetExecCam()
+{
+	if (!CameraBoom)
+	{
+		return;
+	}
+
+	CameraBoom->bDoCollisionTest = true;
+	CameraBoom->TargetArmLength = FreeCameraArmLength;
+	CameraBoom->TargetOffset = FVector::ZeroVector;
+	CameraBoom->SocketOffset = FVector::ZeroVector;
 }
 
 void AExceptionCharacter::UpdateLockOn(float DeltaSeconds)

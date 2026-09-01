@@ -13,7 +13,9 @@ class UCameraComponent;
 class UInputAction;
 class UInputMappingContext;
 class UAnimMontage;
+class UAnimSequence;
 class UBRInventoryComponent;
+class UStaticMeshComponent;
 class ABRBossBase;
 class ABRPlayerGraveMarker;
 struct FInputActionValue;
@@ -66,6 +68,12 @@ class AExceptionCharacter : public ACharacter
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UBRInventoryComponent> InventoryComponent;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UStaticMeshComponent> RootBladeR;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UStaticMeshComponent> RootBladeL;
 	
 protected:
 
@@ -215,10 +223,10 @@ protected:
 	float HeavyAttackGroggyDamage = 25.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Attack", meta=(ClampMin="1.0"))
-	float HiddenRootWeaponDamageMultiplier = 1.75f;
+	float RootDmg = 1.75f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Attack", meta=(ClampMin="1.0"))
-	float HiddenRootWeaponCMDDamageMultiplier = 2.5f;
+	float RootCmdDmg = 2.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Attack", meta=(ClampMin="0.0", Units="cm"))
 	float AttackTraceDistance = 160.0f;
@@ -251,6 +259,12 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation")
 	TObjectPtr<UAnimMontage> HitMontage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|RootBlade")
+	TObjectPtr<UAnimSequence> RootLightAnim;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|RootBlade")
+	TObjectPtr<UAnimSequence> RootHeavyAnim;
 
 	// 현재 체력 / 현재 스태미나
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Stats")
@@ -324,16 +338,43 @@ protected:
 
 	// 처형
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Execution", meta=(ClampMin="0.0", Units="cm"))
-	float ExecutionRange = 450.0f;
+	float ExecRange = 450.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Execution", meta=(ClampMin="0.0", Units="cm"))
-	float ExecutionSnapDistance = 150.0f;
+	float ExecGap = 150.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Execution", meta=(ClampMin="0.01", Units="s"))
-	float ExecutionDuration = 1.0f;
+	float ExecTime = 2.4f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Execution", meta=(ClampMin="0.0", ClampMax="1.0"))
-	float ExecutionDamageMaxHPRatio = 0.3f;
+	float ExecDmgRate = 0.3f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Execution", meta=(ClampMin="0.05", Units="s"))
+	float ExecHitTime = 1.35f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Execution", meta=(ClampMin="50.0", Units="cm"))
+	float ExecCamLen = 230.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Execution", meta=(Units="cm"))
+	FVector ExecCamSide = FVector(0.0f, 95.0f, 35.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Weapon", meta=(ClampMin="0.05", Units="s"))
+	float SwingTime = 0.38f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Weapon", meta=(Units="cm"))
+	FVector BladeGrip = FVector(48.0f, 0.0f, 0.0f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Weapon", meta=(ClampMin="0.05"))
+	float BladeSize = 0.55f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Sound", meta=(ClampMin="50.0", Units="cm"))
+	float StepGap = 135.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Sound", meta=(ClampMin="0.0", ClampMax="2.0"))
+	float StepVol = 0.45f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Sound", meta=(ClampMin="0.0", ClampMax="2.0"))
+	float AttackVol = 0.75f;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Debug")
 	int32 LastAttackHitCount = 0;
@@ -360,10 +401,22 @@ protected:
 	FTimerHandle ParryTimerHandle;
 	FTimerHandle RespawnTimerHandle;
 	FTimerHandle ExecutionTimerHandle;
+	FTimerHandle ExecHitTimer;
 
 	// 처형 대상
 	UPROPERTY(Transient)
 	TObjectPtr<ABRBossBase> PendingExecutionTarget;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Weapon")
+	bool bRootOn = false;
+	bool bSwinging = false;
+	bool bBigSwing = false;
+	float SwingNow = 0.0f;
+	float ExecDmg = 0.0f;
+	float StepNow = 0.0f;
+	bool bLeftStep = false;
+	FRotator BladeBaseR = FRotator::ZeroRotator;
+	FRotator BladeBaseL = FRotator::ZeroRotator;
 
 	// 런타임 입력
 	UPROPERTY(Transient)
@@ -637,7 +690,18 @@ protected:
 	void UpdateLockOn(float DeltaSeconds);
 	ABRBossBase* FindExecutionTarget() const;
 	void StartExecution(ABRBossBase* Target);
+	void DoExecHit();
 	void FinishExecution();
+	void UpdateExecCam(float DeltaSeconds);
+	void ResetExecCam();
+	void SetRootWeapon(bool bOn);
+	void PlayRootAnim(bool bHeavy);
+	void StartRootSwing(bool bHeavy);
+	void UpdateRootSwing(float DeltaSeconds);
+	void UpdateStepSfx(float DeltaSeconds);
+	void PlayStepSfx();
+	void PlaySwingSfx(bool bHeavy);
+	void PlayHitSfx();
 	float GetEffectiveAttackDamage(float BaseDamage, AActor* TargetActor) const;
 
 	float BaseMaxHP = 0.0f;

@@ -9,7 +9,7 @@ ABRPythonBoss::ABRPythonBoss()
 	GroggyDuration = 3.5f;
 	Phase2StartHPRatio = 0.5f;
 	DetectionRange = 1900.0f;
-	MoveSpeed = 210.0f;
+	RunSpeed = 210.0f;
 	Phase2MoveSpeedMultiplier = 1.25f;
 	Phase2CooldownMultiplier = 0.72f;
 	MeleeStandbyDistance = 560.0f;

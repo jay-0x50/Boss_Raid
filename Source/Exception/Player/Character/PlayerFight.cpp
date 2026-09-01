@@ -20,7 +20,16 @@ bool AExceptionCharacter::DoLightAttack()
 	}
 
 	SetCombatState(EBRPlayerCombatState::LightAttack);
-	PlayOptionalMontage(LightAttackMontage);
+	if (bRootOn)
+	{
+		PlayRootAnim(false);
+	}
+	else
+	{
+		PlayOptionalMontage(LightAttackMontage);
+	}
+	StartRootSwing(false);
+	PlaySwingSfx(false);
 	PerformAttackTrace(LightAttackDamage, LightAttackGroggyDamage);
 	UE_LOG(LogTemplateCharacter, Log, TEXT("LightAttack: Damage=%.1f, HitCount=%d"), LightAttackDamage, LastAttackHitCount);
 
@@ -36,7 +45,16 @@ bool AExceptionCharacter::DoHeavyAttack()
 	}
 
 	SetCombatState(EBRPlayerCombatState::HeavyAttack);
-	PlayOptionalMontage(HeavyAttackMontage);
+	if (bRootOn)
+	{
+		PlayRootAnim(true);
+	}
+	else
+	{
+		PlayOptionalMontage(HeavyAttackMontage);
+	}
+	StartRootSwing(true);
+	PlaySwingSfx(true);
 	PerformAttackTrace(HeavyAttackDamage, HeavyAttackGroggyDamage);
 	UE_LOG(LogTemplateCharacter, Log, TEXT("HeavyAttack: Damage=%.1f, HitCount=%d"), HeavyAttackDamage, LastAttackHitCount);
 
@@ -153,17 +171,22 @@ void AExceptionCharacter::PerformAttackTrace(float Damage, float GroggyDamage)
 			DrawDebugSphere(World, Hit.ImpactPoint, 18.0f, 12, FColor::Yellow, false, 1.0f);
 		}
 	}
+
+	if (LastAttackHitCount > 0)
+	{
+		PlayHitSfx();
+	}
 }
 
 float AExceptionCharacter::GetEffectiveAttackDamage(float BaseDamage, AActor* TargetActor) const
 {
 	float Damage = BaseDamage;
-	if (HasInventoryItem(TEXT("Weapon_MimikatzAuthoritySeized")))
+	if (bRootOn)
 	{
-		Damage *= HiddenRootWeaponDamageMultiplier;
+		Damage *= RootDmg;
 		if (TargetActor && TargetActor->GetClass()->GetName().Contains(TEXT("CMD")))
 		{
-			Damage *= HiddenRootWeaponCMDDamageMultiplier;
+			Damage *= RootCmdDmg;
 		}
 	}
 
@@ -204,6 +227,8 @@ float AExceptionCharacter::TakeDamage(float Damage, FDamageEvent const& DamageEv
 		GetWorldTimerManager().ClearTimer(InvincibleTimerHandle);
 		GetWorldTimerManager().ClearTimer(ParryTimerHandle);
 		GetWorldTimerManager().ClearTimer(ExecutionTimerHandle);
+		GetWorldTimerManager().ClearTimer(ExecHitTimer);
+		ResetExecCam();
 		ClearLockOn();
 		SetCombatState(EBRPlayerCombatState::Dead);
 		GetCharacterMovement()->DisableMovement();

@@ -3,9 +3,22 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/Engine.h"
+#include "UObject/ConstructorHelpers.h"
+#include "NiagaraSystem.h"
 
 ABRPatternBossBase::ABRPatternBossBase()
 {
+	static ConstructorHelpers::FObjectFinder<UNiagaraSystem> HitMelee(TEXT("/Game/VFX/Boss/NS_Boss_Melee.NS_Boss_Melee"));
+	static ConstructorHelpers::FObjectFinder<UNiagaraSystem> HitDash(TEXT("/Game/VFX/Boss/NS_Boss_Dash.NS_Boss_Dash"));
+	static ConstructorHelpers::FObjectFinder<UNiagaraSystem> HitAOE(TEXT("/Game/VFX/Boss/NS_Boss_AOE.NS_Boss_AOE"));
+	MeleeEffect = HitMelee.Object;
+	DashEffect = HitDash.Object;
+	AOEEffect = HitAOE.Object;
+	// 별도 전조 에셋이 없는 보스도 공격 종류별로 반드시 경고를 보여 준다.
+	MeleeTelegraphEffect = HitMelee.Object;
+	DashTelegraphEffect = HitDash.Object;
+	AOETelegraphEffect = HitAOE.Object;
+
 	InitialMaxHP = 300.0f;
 	InitialMaxGroggy = 100.0f;
 	GroggyDuration = 3.0f;

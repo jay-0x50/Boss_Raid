@@ -9,16 +9,17 @@ ABRVritraBoss::ABRVritraBoss()
 	GroggyDuration = 3.4f;
 	Phase2StartHPRatio = 0.5f;
 	DetectionRange = 2300.0f;
-	MoveSpeed = 165.0f;
+	RunSpeed = 165.0f;
 	Phase2MoveSpeedMultiplier = 1.22f;
 	Phase2CooldownMultiplier = 0.7f;
-	RotationInterpSpeed = 0.0f;
+	TurnSpeed = 0.0f;
 	MeleeStandbyDistance = 260.0f;
 	RangedStandbyDistance = 1020.0f;
 	RangedComfortMinDistance = 620.0f;
 	VisualMeshType = EBRBossVisualMeshType::SkeletalMesh;
 	MeshRelativeLocation = FVector(0.0f, 0.0f, -90.0f);
-	MeshRelativeRotation = FRotator::ZeroRotator;
+	// 원본 모델의 앞축이 UE 앞축(X)과 달라 그대로 두면 옆으로 달린다.
+	MeshRelativeRotation = FRotator(0.0f, -90.0f, 0.0f);
 	MeshRelativeScale = FVector(100.0f, 100.0f, 100.0f);
 	GroundTraceActorHalfHeight = 130.0f;
 

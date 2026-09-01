@@ -146,7 +146,7 @@ protected:
 	float DetectionRange = 1600.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|AI", meta=(ClampMin="0.0", Units="cm/s"))
-	float MoveSpeed = 180.0f;
+	float RunSpeed = 180.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|AI", meta=(ClampMin="0.0"))
 	float Phase2MoveSpeedMultiplier = 1.25f;
@@ -155,7 +155,7 @@ protected:
 	float Phase2CooldownMultiplier = 0.75f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|AI", meta=(ClampMin="0.0"))
-	float RotationInterpSpeed = 0.0f;
+	float TurnSpeed = 0.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Team", meta=(ClampMin="0.0", Units="cm"))
 	float MeleeStandbyDistance = 520.0f;
@@ -221,13 +221,13 @@ protected:
 	bool bAttackHasImpacted = false;
 	bool bAttackSlotClaimed = false;
 
-	void FaceTarget(float DeltaSeconds);
-	void MoveTowardTarget(float DeltaSeconds);
-	void MoveToTeamStandbyDistance(float DeltaSeconds, float CurrentDistanceToTarget);
-	int32 SelectPattern(float DistanceToTarget) const;
-	bool CanStartPattern(const FBRBossPatternData& Pattern, float DistanceToTarget) const;
-	float GetPatternCooldown(const FBRBossPatternData& Pattern) const;
-	float GetCurrentMoveSpeed() const;
+	void LookAtPlayer(float DeltaSeconds);
+	void RunToPlayer(float DeltaSeconds);
+	void KeepSpace(float DeltaSeconds, float PlayerDist);
+	int32 PickAttack(float PlayerDist) const;
+	bool CanUseAttack(const FBRBossPatternData& Attack, float PlayerDist) const;
+	float GetAttackCool(const FBRBossPatternData& Attack) const;
+	float GetRunSpeed() const;
 	void StartBossAttack(int32 PatternIndex);
 	void PerformBossAttack(int32 AttackId);
 	void BeginAttackRecovery(const FBRBossPatternData& Pattern, int32 AttackId);

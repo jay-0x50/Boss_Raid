@@ -30,9 +30,9 @@ void ABRPatternBossBase::UpdateBossAI(float DeltaSeconds)
 		return;
 	}
 
-	FaceTarget(DeltaSeconds);
+	LookAtPlayer(DeltaSeconds);
 
-	const int32 PatternIndex = SelectPattern(DistanceToTarget);
+	const int32 PatternIndex = PickAttack(DistanceToTarget);
 	if (PatternIndex != INDEX_NONE)
 	{
 		StartBossAttack(PatternIndex);
@@ -41,32 +41,32 @@ void ABRPatternBossBase::UpdateBossAI(float DeltaSeconds)
 
 	if (IsTeamMateAttacking())
 	{
-		MoveToTeamStandbyDistance(DeltaSeconds, DistanceToTarget);
+		KeepSpace(DeltaSeconds, DistanceToTarget);
 		return;
 	}
 
 	if (TeamRole == EBRBossTeamRole::Ranged && DistanceToTarget < RangedComfortMinDistance)
 	{
-		MoveToTeamStandbyDistance(DeltaSeconds, DistanceToTarget);
+		KeepSpace(DeltaSeconds, DistanceToTarget);
 		return;
 	}
 
 	if (TeamRole != EBRBossTeamRole::Ranged && DistanceToTarget > MeleeStandbyDistance)
 	{
-		MoveTowardTarget(DeltaSeconds);
+		RunToPlayer(DeltaSeconds);
 		return;
 	}
 
 	if (TeamRole == EBRBossTeamRole::Ranged)
 	{
-		MoveToTeamStandbyDistance(DeltaSeconds, DistanceToTarget);
+		KeepSpace(DeltaSeconds, DistanceToTarget);
 		return;
 	}
 
-	MoveTowardTarget(DeltaSeconds);
+	RunToPlayer(DeltaSeconds);
 }
 
-void ABRPatternBossBase::FaceTarget(float DeltaSeconds)
+void ABRPatternBossBase::LookAtPlayer(float DeltaSeconds)
 {
 	if (!CurrentTarget)
 	{
@@ -81,13 +81,13 @@ void ABRPatternBossBase::FaceTarget(float DeltaSeconds)
 	}
 
 	const FRotator DesiredRotation = FlatDirection.Rotation();
-	const FRotator NewRotation = RotationInterpSpeed > 0.0f
-		? FMath::RInterpTo(GetActorRotation(), DesiredRotation, DeltaSeconds, RotationInterpSpeed)
+	const FRotator NewRotation = TurnSpeed > 0.0f
+		? FMath::RInterpTo(GetActorRotation(), DesiredRotation, DeltaSeconds, TurnSpeed)
 		: DesiredRotation;
 	SetActorRotation(FRotator(0.0f, NewRotation.Yaw, 0.0f));
 }
 
-void ABRPatternBossBase::MoveTowardTarget(float DeltaSeconds)
+void ABRPatternBossBase::RunToPlayer(float DeltaSeconds)
 {
 	if (!CurrentTarget)
 	{
@@ -110,11 +110,11 @@ void ABRPatternBossBase::MoveTowardTarget(float DeltaSeconds)
 		return;
 	}
 
-	AddActorWorldOffset(MoveDirection * GetCurrentMoveSpeed() * DeltaSeconds, true);
+	AddActorWorldOffset(MoveDirection * GetRunSpeed() * DeltaSeconds, true);
 	NotifyBossAnimationStage(EBRBossAnimationStage::Move);
 }
 
-void ABRPatternBossBase::MoveToTeamStandbyDistance(float DeltaSeconds, float CurrentDistanceToTarget)
+void ABRPatternBossBase::KeepSpace(float DeltaSeconds, float PlayerDist)
 {
 	if (!CurrentTarget)
 	{
@@ -123,7 +123,7 @@ void ABRPatternBossBase::MoveToTeamStandbyDistance(float DeltaSeconds, float Cur
 
 	const float DesiredDistance = TeamRole == EBRBossTeamRole::Ranged ? RangedStandbyDistance : MeleeStandbyDistance;
 	const float DistanceTolerance = 80.0f;
-	if (FMath::Abs(CurrentDistanceToTarget - DesiredDistance) <= DistanceTolerance)
+	if (FMath::Abs(PlayerDist - DesiredDistance) <= DistanceTolerance)
 	{
 		if (CurrentAnimationStage != EBRBossAnimationStage::Idle)
 		{
@@ -139,13 +139,13 @@ void ABRPatternBossBase::MoveToTeamStandbyDistance(float DeltaSeconds, float Cur
 		return;
 	}
 
-	const FVector MoveDirection = CurrentDistanceToTarget > DesiredDistance ? DirectionToTarget : -DirectionToTarget;
-	AddActorWorldOffset(MoveDirection * GetCurrentMoveSpeed() * DeltaSeconds, true);
+	const FVector MoveDirection = PlayerDist > DesiredDistance ? DirectionToTarget : -DirectionToTarget;
+	AddActorWorldOffset(MoveDirection * GetRunSpeed() * DeltaSeconds, true);
 	NotifyBossAnimationStage(EBRBossAnimationStage::Move);
 }
 
-float ABRPatternBossBase::GetCurrentMoveSpeed() const
+float ABRPatternBossBase::GetRunSpeed() const
 {
 	const float PhaseMultiplier = BossPhase == EBRBossPhase::Phase2 ? Phase2MoveSpeedMultiplier : 1.0f;
-	return MoveSpeed * PhaseMultiplier;
+	return RunSpeed * PhaseMultiplier;
 }
