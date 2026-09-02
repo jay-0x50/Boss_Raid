@@ -18,6 +18,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
 	TObjectPtr<UBoxComponent> TriggerBox;
@@ -27,6 +28,9 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Hidden Story")
 	FName RequestId = TEXT("Nel_FindPythonTrace");
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Story")
+	FName BeatId = NAME_None;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Hidden Story")
 	FText RequestCompletedMessage;
@@ -58,6 +62,13 @@ protected:
 	UFUNCTION()
 	void OnRequestBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
 
+	UFUNCTION()
+	void HandleNarrativeBeatConsumed(FName PersistentId);
+
 private:
+	FName GetResolvedBeatId() const;
+	void RefreshConsumedState();
+	void ApplyConsumedState();
+	void ApplyAvailableState();
 	bool bWasTriggered = false;
 };

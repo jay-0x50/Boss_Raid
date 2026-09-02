@@ -61,6 +61,10 @@ struct FBRBossPatternData
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Pattern", meta=(ClampMin="0.0"))
 	float Damage = 20.0f;
 
+	/** Parry is opt-in; zones, projectiles, dashes and generic damage stay unsafe. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Pattern")
+	bool bCanBeParried = false;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Pattern", meta=(ClampMin="0.01", Units="s"))
 	float Windup = 0.65f;
 
@@ -153,6 +157,15 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|AI", meta=(ClampMin="0.0"))
 	float Phase2CooldownMultiplier = 0.75f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Enrage", meta=(ClampMin="1.0"))
+	float EnrageMoveSpeedMultiplier = 1.15f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Enrage", meta=(ClampMin="1.0"))
+	float EnrageDamageMultiplier = 1.20f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Enrage", meta=(ClampMin="0.05", ClampMax="1.0"))
+	float EnrageCooldownMultiplier = 0.85f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|AI", meta=(ClampMin="0.0"))
 	float TurnSpeed = 0.0f;

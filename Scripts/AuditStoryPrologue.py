@@ -1,3 +1,4 @@
+import math
 import unreal
 
 
@@ -19,7 +20,7 @@ def get_prop(obj, name):
 if not unreal.EditorLoadingAndSavingUtils.load_map(MAP_PATH):
     fail(f"Could not load {MAP_PATH}")
 
-actors = unreal.EditorLevelLibrary.get_all_level_actors()
+actors = list(unreal.get_editor_subsystem(unreal.EditorActorSubsystem).get_all_level_actors())
 by_label = {actor.get_actor_label(): actor for actor in actors}
 
 required = [
@@ -28,6 +29,8 @@ required = [
     "Story_IntroCamera_1",
     "Story_IntroCamera_2",
     "Story_IntroCamera_3",
+    "Demo_Field_CheckpointBonfire",
+    "Demo_SecondPass_PostProcess",
     "Story_Cave_Floor",
     "Story_Cave_BackWall",
     "Story_Cave_Roof",
@@ -55,11 +58,79 @@ start = player_start.get_actor_location()
 if abs(start.x - 1200.0) > 1.0 or abs(start.y) > 1.0 or abs(start.z - 150.0) > 1.0:
     fail(f"Unexpected player start: {start}")
 
+route_beat_locations = {
+    "Story_Nel_FirstRest": (2140.0, 400.0, 150.0),
+    "Demo_Field_CheckpointBonfire": (2180.0, 520.0, 150.0),
+    "Story_Lore_MemoryLeak": (2910.0, 1880.0, 150.0),
+}
+for label, expected in route_beat_locations.items():
+    actual = by_label[label].get_actor_location()
+    if math.dist((actual.x, actual.y, actual.z), expected) > 2.0:
+        fail(f"Story beat is off the Field 0 route: {label} at {actual}")
+
+legacy_checkpoint = by_label.get("BRCheckpoint")
+if legacy_checkpoint and legacy_checkpoint.get_actor_location().z > -4000.0:
+    fail(f"Legacy duplicate checkpoint is still reachable: {legacy_checkpoint.get_actor_location()}")
+
 director = by_label["Story_IntroDirector"]
 cameras = get_prop(director, "shot_cameras")
 times = get_prop(director, "shot_times")
 if len(cameras) != 3 or len(times) != 3 or any(camera is None for camera in cameras):
     fail(f"Intro shot setup is invalid: cameras={len(cameras)}, times={len(times)}")
+
+one_shot_ids = []
+for actor in story_actors:
+    label = actor.get_actor_label()
+    property_name = None
+    if label == "Story_IntroDirector" or label.startswith("Story_Lore_") or label.startswith("Story_Nel_"):
+        property_name = "beat_id"
+    elif label.startswith("Story_HiddenFragment_"):
+        property_name = "fragment_id"
+    if property_name:
+        persistent_id = str(get_prop(actor, property_name))
+        if not persistent_id or persistent_id == "None":
+            fail(f"Persistent one-shot id is None: {label}.{property_name}")
+        one_shot_ids.append((label, persistent_id))
+
+id_values = [persistent_id for _label, persistent_id in one_shot_ids]
+if len(id_values) != len(set(id_values)):
+    fail(f"Duplicate persistent one-shot ids: {one_shot_ids}")
+
+expected_fragment_ids = {
+    "Story_HiddenFragment_1": "HiddenFragment_Field1",
+    "Story_HiddenFragment_2": "HiddenFragment_Field2",
+    "Story_HiddenFragment_3": "HiddenFragment_Field3",
+}
+for label, expected_id in expected_fragment_ids.items():
+    if str(get_prop(by_label[label], "fragment_id")) != expected_id:
+        fail(f"Wrong fragment id on {label}: {get_prop(by_label[label], 'fragment_id')}")
+
+camera_targets = (
+    (1200.0, 0.0, 130.0),
+    (2060.0, 0.0, 230.0),
+    (1200.0, 0.0, 135.0),
+)
+for camera, target in zip(cameras, camera_targets):
+    location = camera.get_actor_location()
+    forward = camera.get_actor_forward_vector()
+    dx, dy, dz = target[0] - location.x, target[1] - location.y, target[2] - location.z
+    distance = math.sqrt(dx * dx + dy * dy + dz * dz)
+    look_dot = (forward.x * dx + forward.y * dy + forward.z * dz) / max(distance, 1.0)
+    if look_dot < 0.995:
+        fail(f"Intro camera does not face its subject: {camera.get_actor_label()} dot={look_dot:.3f}")
+
+for actor in story_actors:
+    label = actor.get_actor_label()
+    if label.startswith("Story_Cave_") or label.startswith("Story_Hill_"):
+        rotation = actor.get_actor_rotation()
+        if abs(rotation.pitch) > 15.0 or abs(rotation.roll) > 15.0:
+            fail(f"Story mesh has yaw written into pitch/roll: {label} rotation={rotation}")
+
+post_process_settings = get_prop(by_label["Demo_SecondPass_PostProcess"], "settings")
+if get_prop(post_process_settings, "auto_exposure_bias") > -1.5:
+    fail("Runtime field exposure is too bright for the dark SF presentation")
+if get_prop(post_process_settings, "bloom_intensity") > 0.15:
+    fail("Runtime field bloom clips the blue/gold emissive accents")
 
 for label in ("Story_Lore_Awakening", "Story_Lore_MemoryLeak", "Story_Lore_CMDApproach"):
     if get_prop(by_label[label], "log_text").is_empty():

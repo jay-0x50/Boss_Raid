@@ -226,7 +226,9 @@ void AExceptionCharacter::Tick(float DeltaSeconds)
 		return;
 	}
 
-	if (CurrentStamina < MaxStamina && World->GetTimeSeconds() - LastStaminaSpendTime >= StaminaRegenDelay)
+	const bool bCanRegenStamina = CombatState == EBRPlayerCombatState::Idle && !bSprinting;
+	if (bCanRegenStamina && CurrentStamina < MaxStamina
+		&& World->GetTimeSeconds() - LastStaminaSpendTime >= StaminaRegenDelay)
 	{
 		CurrentStamina = FMath::Min(MaxStamina, CurrentStamina + (StaminaRegenPerSecond * DeltaSeconds));
 		BroadcastStamina();
@@ -238,6 +240,7 @@ void AExceptionCharacter::Tick(float DeltaSeconds)
 	UpdateLockOn(DeltaSeconds);
 	UpdateStepSfx(DeltaSeconds);
 	UpdateRootSwing(DeltaSeconds);
+	UpdateAttackHitWindow(DeltaSeconds);
 	UpdateExecCam(DeltaSeconds);
 	UpdateHendelAppearance();
 	DrawCombatDebug();
@@ -440,4 +443,10 @@ void AExceptionCharacter::BeginPlay()
 	RestoreHPAndStamina();
 	GrantDefaultLoadout();
 	RegisterInitialCheckpoint();
+}
+
+void AExceptionCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	ClearHitStop();
+	Super::EndPlay(EndPlayReason);
 }

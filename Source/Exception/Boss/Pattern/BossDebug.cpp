@@ -22,8 +22,9 @@ void ABRPatternBossBase::DrawBossDebug() const
 		: TEXT("None");
 
 	const FString DebugText = FString::Printf(
-		TEXT("Pattern Boss Base\nPhase: %s\nRole: %s\nHP: %.0f / %.0f\nGroggy: %.0f / %.0f\nAI: %s\nTeamMate Attacking: %s\nAttacking: %s\nPattern: %s\nGroggy State: %s\nExecution: %s\nDead: %s"),
+		TEXT("Pattern Boss Base\nPhase: %s\nEnraged: %s\nRole: %s\nHP: %.0f / %.0f\nGroggy: %.0f / %.0f\nAI: %s\nTeamMate Attacking: %s\nAttacking: %s\nPattern: %s\nGroggy State: %s\nExecution: %s\nDead: %s"),
 		BossPhase == EBRBossPhase::Phase2 ? TEXT("Phase2") : TEXT("Phase1"),
+		bIsEnraged ? TEXT("true") : TEXT("false"),
 		TeamRole == EBRBossTeamRole::Ranged ? TEXT("Ranged") : TeamRole == EBRBossTeamRole::Melee ? TEXT("Melee") : TeamRole == EBRBossTeamRole::Support ? TEXT("Support") : TEXT("Solo"),
 		CurrentHP,
 		MaxHP,
@@ -50,7 +51,8 @@ void ABRPatternBossBase::DrawActivePatternTelegraph() const
 	const FBRBossPatternData& Pattern = ActivePatternSnapshot;
 	const FVector GroundOffset(0.0f, 0.0f, TelegraphHeightOffset - GroundTraceActorHalfHeight);
 	const FVector AttackStart = LockedAttackOrigin + GroundOffset;
-	const FVector AttackForward = Pattern.PatternType == EBRBossPatternType::Dash
+	const bool bIsRetreat = Pattern.PatternType == EBRBossPatternType::Dash && Pattern.bDashAwayFromTarget;
+	const FVector AttackForward = Pattern.PatternType == EBRBossPatternType::Dash && !bIsRetreat
 		? GetLockedDashDirection(Pattern)
 		: LockedAttackDirection;
 	const FVector AttackEnd = AttackStart + (AttackForward * Pattern.ForwardOffset);
@@ -79,7 +81,9 @@ void ABRPatternBossBase::DrawActivePatternTelegraph() const
 
 	if (Pattern.PatternType == EBRBossPatternType::Dash && Pattern.DashDistance > 0.0f)
 	{
-		const FVector DashEnd = AttackStart + (AttackForward * (Pattern.DashDistance + Pattern.ForwardOffset));
+		const FVector DashDirection = GetLockedDashDirection(Pattern);
+		const FVector DashEnd = AttackStart + (DashDirection * Pattern.DashDistance)
+			+ (bIsRetreat ? FVector::ZeroVector : DashDirection * Pattern.ForwardOffset);
 		DrawDebugLine(GetWorld(), AttackStart, DashEnd, FColor::Red, false, TelegraphDuration, 0, 5.0f);
 		DrawDebugSphere(GetWorld(), DashEnd, Pattern.Radius * 0.75f, 20, FColor::Red, false, TelegraphDuration, 0, 2.0f);
 	}

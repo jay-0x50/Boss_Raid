@@ -4,6 +4,7 @@
 #include "Boss/Team/BRBossTeamCoordinator.h"
 #include "BRNarrativeQueueSubsystem.h"
 #include "BRHiddenStorySubsystem.h"
+#include "BRSaveGame.h"
 #include "BRSaveGameSubsystem.h"
 #include "BRBossStatusWidget.h"
 #include "Player/Character/ExceptionCharacter.h"
@@ -53,6 +54,14 @@ void ABRBossArenaTrigger::BeginPlay()
 		TriggerBox->OnComponentBeginOverlap.AddDynamic(this, &ABRBossArenaTrigger::OnTriggerBeginOverlap);
 	}
 
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UBRHiddenStorySubsystem* Story = GI->GetSubsystem<UBRHiddenStorySubsystem>())
+		{
+			Story->OnMainBossProgressChanged.AddDynamic(this, &ABRBossArenaTrigger::HandleMainBossProgressChanged);
+		}
+	}
+
 	TArray<ABRBossBase*> ManagedBosses;
 	BuildManagedBossList(ManagedBosses);
 	for (ABRBossBase* Boss : ManagedBosses)
@@ -68,6 +77,18 @@ void ABRBossArenaTrigger::BeginPlay()
 	{
 		RewardActorToShowOnDefeat->SetActorHiddenInGame(true);
 		RewardActorToShowOnDefeat->SetActorEnableCollision(false);
+	}
+
+	if (RefreshClearedStateFromStory())
+	{
+		GetWorldTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this]()
+		{
+			if (bArenaCleared)
+			{
+				ApplyClearedState();
+			}
+		}));
+		return;
 	}
 
 	GetWorldTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this]()
@@ -113,6 +134,19 @@ void ABRBossArenaTrigger::BeginPlay()
 	}
 }
 
+void ABRBossArenaTrigger::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UBRHiddenStorySubsystem* Story = GI->GetSubsystem<UBRHiddenStorySubsystem>())
+		{
+			Story->OnMainBossProgressChanged.RemoveDynamic(this, &ABRBossArenaTrigger::HandleMainBossProgressChanged);
+		}
+	}
+	GetWorldTimerManager().ClearTimer(BossIntroTimerHandle);
+	Super::EndPlay(EndPlayReason);
+}
+
 void ABRBossArenaTrigger::OnTriggerBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
 	if (!bStartOnPlayerOverlap || bArenaStarted || bArenaCleared || !Cast<AExceptionCharacter>(OtherActor))
@@ -126,6 +160,96 @@ void ABRBossArenaTrigger::OnTriggerBeginOverlap(UPrimitiveComponent* OverlappedC
 void ABRBossArenaTrigger::ActivateArena()
 {
 	StartArena();
+}
+
+bool ABRBossArenaTrigger::RefreshClearedStateFromStory()
+{
+	if (BossStoryId.IsNone())
+	{
+		return false;
+	}
+
+	bool bWasDefeated = false;
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (const UBRHiddenStorySubsystem* Story = GI->GetSubsystem<UBRHiddenStorySubsystem>())
+		{
+			bWasDefeated = Story->IsMainBossDefeated(BossStoryId);
+		}
+
+		// Continue opens the saved level before ApplyPendingLoadedGame runs. Reading the
+		// pending record here prevents an overlap from briefly restarting a cleared boss.
+		if (!bWasDefeated)
+		{
+			if (const UBRSaveGameSubsystem* SaveSubsystem = GI->GetSubsystem<UBRSaveGameSubsystem>())
+			{
+				if (const UBRSaveGame* PendingSave = SaveSubsystem->GetPendingSaveGame())
+				{
+					bWasDefeated = PendingSave->DefeatedBossIds.Contains(BossStoryId);
+				}
+			}
+		}
+	}
+
+	if (bWasDefeated)
+	{
+		ApplyClearedState();
+	}
+	return bWasDefeated;
+}
+
+void ABRBossArenaTrigger::ApplyClearedState()
+{
+	bArenaStarted = false;
+	bArenaCleared = true;
+	GetWorldTimerManager().ClearTimer(BossIntroTimerHandle);
+	HideBossStatusWidget();
+
+	if (TriggerBox)
+	{
+		TriggerBox->SetGenerateOverlapEvents(false);
+		TriggerBox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
+
+	TArray<ABRBossBase*> ManagedBosses;
+	BuildManagedBossList(ManagedBosses);
+	for (ABRBossBase* Boss : ManagedBosses)
+	{
+		if (Boss)
+		{
+			Boss->SetCombatAIEnabled(false);
+			Boss->PrepareForArenaInactive();
+			Boss->SetActorHiddenInGame(true);
+			Boss->SetActorEnableCollision(false);
+		}
+	}
+
+	if (GateActorToHideOnDefeat)
+	{
+		GateActorToHideOnDefeat->SetActorHiddenInGame(true);
+		GateActorToHideOnDefeat->SetActorEnableCollision(false);
+	}
+
+	if (RewardActorToShowOnDefeat)
+	{
+		RewardActorToShowOnDefeat->SetActorHiddenInGame(false);
+		RewardActorToShowOnDefeat->SetActorEnableCollision(true);
+	}
+}
+
+void ABRBossArenaTrigger::HandleMainBossProgressChanged(FName BossId, int32 DefeatedCount)
+{
+	// HandleBossDefeated already owns the live defeat presentation. This callback is
+	// for restored or externally applied story progress, where the arena is still fresh.
+	if (bArenaCleared)
+	{
+		return;
+	}
+
+	if (BossId.IsNone() || BossId == BossStoryId)
+	{
+		RefreshClearedStateFromStory();
+	}
 }
 
 void ABRBossArenaTrigger::StartArena()

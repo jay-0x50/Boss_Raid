@@ -33,6 +33,7 @@ bool AExceptionCharacter::SpendStamina(float Amount)
 
 void AExceptionCharacter::RestoreHPAndStamina()
 {
+	CancelAttackChain();
 	CurrentHP = MaxHP;
 	CurrentStamina = MaxStamina;
 	GetWorldTimerManager().ClearTimer(StateTimerHandle);
@@ -77,6 +78,7 @@ void AExceptionCharacter::RestoreStamina(float Amount)
 
 void AExceptionCharacter::ApplySavedStats(float SavedHP, float SavedStamina)
 {
+	CancelAttackChain();
 	GetWorldTimerManager().ClearTimer(StateTimerHandle);
 	GetWorldTimerManager().ClearTimer(InvincibleTimerHandle);
 	GetWorldTimerManager().ClearTimer(ParryTimerHandle);

@@ -2,6 +2,8 @@
 
 #include "Player/Character/ExceptionCharacter.h"
 
+#include "Combat/BRBossDamageType.h"
+
 #include "BRCombatInterface.h"
 #include "BRPlayerGraveMarker.h"
 #include "Boss/Base/BRBossBase.h"
@@ -17,8 +19,13 @@ bool AExceptionCharacter::DoLightAttack()
 {
 	if (CombatState == EBRPlayerCombatState::LightAttack)
 	{
-		bLightComboQueued = true;
-		return true;
+		if (CanBufferLightComboInput())
+		{
+			bLightComboQueued = true;
+			return true;
+		}
+
+		return false;
 	}
 
 	if (!CanStartCombatAction())
@@ -34,8 +41,32 @@ bool AExceptionCharacter::DoLightAttack()
 	return StartLightComboStep();
 }
 
+bool AExceptionCharacter::CanBufferLightComboInput() const
+{
+	const int32 ComboCount = FMath::Max(1, LightComboAnims.Num());
+	if (CombatState != EBRPlayerCombatState::LightAttack || LightComboIndex + 1 >= ComboCount
+		|| CurrentLightAttackStepDuration <= KINDA_SMALL_NUMBER)
+	{
+		return false;
+	}
+
+	const float RemainingTime = GetWorldTimerManager().GetTimerRemaining(StateTimerHandle);
+	if (RemainingTime < 0.0f)
+	{
+		return false;
+	}
+
+	const float Progress = 1.0f - FMath::Clamp(RemainingTime / CurrentLightAttackStepDuration, 0.0f, 1.0f);
+	return Progress >= 1.0f - LightComboBufferWindowFraction;
+}
+
 bool AExceptionCharacter::StartLightComboStep()
 {
+	GetWorldTimerManager().ClearTimer(AttackHitTimerHandle);
+	EndAttackHitWindow();
+	DamagedActorsThisAttack.Reset();
+	bHitStopTriggeredThisAttack = false;
+
 	if (!SpendStamina(LightAttackStaminaCost))
 	{
 		return false;
@@ -61,8 +92,8 @@ bool AExceptionCharacter::StartLightComboStep()
 	const float HitDelay = LightAttackHitDelay + static_cast<float>(TuneIndex) * 0.035f;
 	GetWorldTimerManager().SetTimer(AttackHitTimerHandle, this, &AExceptionCharacter::ApplyPendingAttackHit, HitDelay, false);
 
-	const float StepDuration = LightAttackDuration * DurationRates[TuneIndex];
-	GetWorldTimerManager().SetTimer(StateTimerHandle, this, &AExceptionCharacter::FinishLightComboStep, StepDuration, false);
+	CurrentLightAttackStepDuration = LightAttackDuration * DurationRates[TuneIndex];
+	GetWorldTimerManager().SetTimer(StateTimerHandle, this, &AExceptionCharacter::FinishLightComboStep, CurrentLightAttackStepDuration, false);
 	return true;
 }
 
@@ -82,6 +113,8 @@ void AExceptionCharacter::FinishLightComboStep()
 
 	LightComboIndex = 0;
 	bLightComboQueued = false;
+	CurrentLightAttackStepDuration = 0.0f;
+	EndAttackHitWindow();
 	SetCombatState(EBRPlayerCombatState::Idle);
 }
 
@@ -93,6 +126,10 @@ bool AExceptionCharacter::DoHeavyAttack()
 	}
 
 	SetCombatState(EBRPlayerCombatState::HeavyAttack);
+	GetWorldTimerManager().ClearTimer(AttackHitTimerHandle);
+	EndAttackHitWindow();
+	DamagedActorsThisAttack.Reset();
+	bHitStopTriggeredThisAttack = false;
 	const bool bAltHeavy = (HeavyVariationIndex++ % 2) == 1 && HeavyAltAnim != nullptr;
 	UAnimSequence* AttackAnim = bAltHeavy ? HeavyAltAnim.Get() : RootHeavyAnim.Get();
 	PlayAttackSequence(AttackAnim, HeavyAttackMontage.Get(), bAltHeavy ? 1.12f : 1.34f);
@@ -118,20 +155,68 @@ void AExceptionCharacter::ApplyPendingAttackHit()
 		return;
 	}
 
+	BeginAttackHitWindow();
+	UE_LOG(LogTemplateCharacter, Log, TEXT("AttackWindow: Combo=%d Damage=%.1f InitialHits=%d"), LightComboIndex + 1, PendingAttackDamage, LastAttackHitCount);
+}
+
+void AExceptionCharacter::BeginAttackHitWindow()
+{
+	if (CombatState != EBRPlayerCombatState::LightAttack && CombatState != EBRPlayerCombatState::HeavyAttack)
+	{
+		return;
+	}
+
+	bAttackHitWindowActive = true;
+	AttackHitWindowRemaining = CombatState == EBRPlayerCombatState::LightAttack
+		? LightAttackHitWindowDuration
+		: HeavyAttackHitWindowDuration;
 	PerformAttackTrace(PendingAttackDamage, PendingAttackGroggyDamage);
-	UE_LOG(LogTemplateCharacter, Log, TEXT("AttackStep: Combo=%d Damage=%.1f HitCount=%d"), LightComboIndex + 1, PendingAttackDamage, LastAttackHitCount);
+}
+
+void AExceptionCharacter::UpdateAttackHitWindow(float DeltaSeconds)
+{
+	if (!bAttackHitWindowActive)
+	{
+		return;
+	}
+
+	if (CombatState != EBRPlayerCombatState::LightAttack && CombatState != EBRPlayerCombatState::HeavyAttack)
+	{
+		EndAttackHitWindow();
+		return;
+	}
+
+	AttackHitWindowRemaining -= DeltaSeconds;
+	if (AttackHitWindowRemaining <= 0.0f)
+	{
+		EndAttackHitWindow();
+		return;
+	}
+
+	PerformAttackTrace(PendingAttackDamage, PendingAttackGroggyDamage);
+}
+
+void AExceptionCharacter::EndAttackHitWindow()
+{
+	bAttackHitWindowActive = false;
+	AttackHitWindowRemaining = 0.0f;
 }
 
 void AExceptionCharacter::CancelAttackChain()
 {
 	GetWorldTimerManager().ClearTimer(AttackHitTimerHandle);
+	EndAttackHitWindow();
+	ClearHitStop();
+	DamagedActorsThisAttack.Reset();
+	bHitStopTriggeredThisAttack = false;
 	bLightComboQueued = false;
 	LightComboIndex = 0;
+	CurrentLightAttackStepDuration = 0.0f;
 }
 
 bool AExceptionCharacter::DoDodge()
 {
-	if (!CanStartCombatAction() || !SpendStamina(DodgeStaminaCost))
+	if (bRolling || !CanStartCombatAction() || !SpendStamina(DodgeStaminaCost))
 	{
 		return false;
 	}
@@ -201,7 +286,9 @@ void AExceptionCharacter::StartDodgeRoll(const FVector& Direction)
 {
 	StopSprint();
 	bRolling = true;
+	bRollStartedLockedOn = bIsLockedOn;
 	RollNow = 0.0f;
+	RollTravelAlpha = 0.0f;
 	RollDirection = Direction.GetSafeNormal2D();
 	if (RollDirection.IsNearlyZero())
 	{
@@ -209,29 +296,74 @@ void AExceptionCharacter::StartDodgeRoll(const FVector& Direction)
 	}
 
 	SetActorRotation(RollDirection.Rotation());
-	BaseMeshRelativeLocation = GetMesh()->GetRelativeLocation();
-	BaseMeshRelativeRotation = GetMesh()->GetRelativeRotation();
-	GetCapsuleComponent()->SetCapsuleHalfHeight(RollCapsuleHalfHeight, true);
-	GetCharacterMovement()->GroundFriction = 0.55f;
-	GetCharacterMovement()->BrakingDecelerationWalking = 260.0f;
-	GetCharacterMovement()->Velocity = RollDirection * DodgeImpulseStrength;
+	if (GetMesh())
+	{
+		BaseMeshRelativeLocation = GetMesh()->GetRelativeLocation();
+		BaseMeshRelativeRotation = GetMesh()->GetRelativeRotation();
+	}
+
+	RollSavedCapsuleHalfHeight = GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight();
+	GetCapsuleComponent()->SetCapsuleHalfHeight(FMath::Min(RollCapsuleHalfHeight, RollSavedCapsuleHalfHeight), true);
+
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		RollSavedGroundFriction = Movement->GroundFriction;
+		RollSavedBrakingDeceleration = Movement->BrakingDecelerationWalking;
+		bRollSavedOrientRotationToMovement = Movement->bOrientRotationToMovement;
+		bRollSavedUseControllerDesiredRotation = Movement->bUseControllerDesiredRotation;
+		Movement->StopMovementImmediately();
+		Movement->GroundFriction = 0.0f;
+		Movement->BrakingDecelerationWalking = 0.0f;
+		Movement->bOrientRotationToMovement = false;
+		Movement->bUseControllerDesiredRotation = false;
+	}
 }
 
 void AExceptionCharacter::UpdateDodgeRoll(float DeltaSeconds)
 {
-	if (!bRolling || !GetMesh())
+	if (!bRolling)
 	{
 		return;
 	}
 
 	RollNow += DeltaSeconds;
 	const float Alpha = FMath::Clamp(RollNow / FMath::Max(DodgeDuration, KINDA_SMALL_NUMBER), 0.0f, 1.0f);
+	const float TravelAlpha = 0.5f - 0.5f * FMath::Cos(Alpha * PI);
+	const float TravelDelta = FMath::Max(0.0f, TravelAlpha - RollTravelAlpha) * DodgeRollDistance;
+	RollTravelAlpha = TravelAlpha;
+
+	if (TravelDelta > KINDA_SMALL_NUMBER)
+	{
+		if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+		{
+			const FVector MoveDelta = RollDirection * TravelDelta;
+			FHitResult Hit;
+			Movement->SafeMoveUpdatedComponent(MoveDelta, GetActorQuat(), true, Hit);
+			if (Hit.IsValidBlockingHit())
+			{
+				// CharacterMovement's SlideAlongSurface override is protected. Reproduce
+				// the small remaining tangent move through the public swept-move API.
+				const FVector RemainingDelta = MoveDelta * FMath::Max(0.0f, 1.0f - Hit.Time);
+				const FVector SlideDelta = FVector::VectorPlaneProject(RemainingDelta, Hit.Normal);
+				if (!SlideDelta.IsNearlyZero())
+				{
+					FHitResult SlideHit;
+					Movement->SafeMoveUpdatedComponent(SlideDelta, GetActorQuat(), true, SlideHit);
+				}
+			}
+			Movement->Velocity = FVector::ZeroVector;
+		}
+	}
+
 	const float TurnAlpha = FMath::InterpEaseInOut(0.0f, 1.0f, Alpha, 1.65f);
-	GetMesh()->SetRelativeRotation(FRotator(
-		BaseMeshRelativeRotation.Pitch - 360.0f * TurnAlpha,
-		BaseMeshRelativeRotation.Yaw,
-		BaseMeshRelativeRotation.Roll));
-	GetMesh()->SetRelativeLocation(BaseMeshRelativeLocation + FVector(0.0f, 0.0f, FMath::Sin(Alpha * PI) * RollVisualLift));
+	if (GetMesh())
+	{
+		GetMesh()->SetRelativeRotation(FRotator(
+			BaseMeshRelativeRotation.Pitch - 360.0f * TurnAlpha,
+			BaseMeshRelativeRotation.Yaw,
+			BaseMeshRelativeRotation.Roll));
+		GetMesh()->SetRelativeLocation(BaseMeshRelativeLocation + FVector(0.0f, 0.0f, FMath::Sin(Alpha * PI) * RollVisualLift));
+	}
 
 	if (Alpha >= 1.0f)
 	{
@@ -248,15 +380,24 @@ void AExceptionCharacter::EndDodgeRoll()
 
 	bRolling = false;
 	RollNow = 0.0f;
+	RollTravelAlpha = 0.0f;
 	if (GetMesh())
 	{
 		GetMesh()->SetRelativeLocation(BaseMeshRelativeLocation);
 		GetMesh()->SetRelativeRotation(BaseMeshRelativeRotation);
 	}
-	GetCapsuleComponent()->SetCapsuleHalfHeight(NormalCapsuleHalfHeight, true);
-	GetCharacterMovement()->GroundFriction = NormalGroundFriction;
-	GetCharacterMovement()->BrakingDecelerationWalking = NormalBrakingDeceleration;
-	GetCharacterMovement()->Velocity *= 0.28f;
+	GetCapsuleComponent()->SetCapsuleHalfHeight(RollSavedCapsuleHalfHeight, true);
+	if (UCharacterMovementComponent* Movement = GetCharacterMovement())
+	{
+		Movement->GroundFriction = RollSavedGroundFriction;
+		Movement->BrakingDecelerationWalking = RollSavedBrakingDeceleration;
+		Movement->bOrientRotationToMovement = bRollStartedLockedOn == bIsLockedOn
+			? bRollSavedOrientRotationToMovement
+			: !bIsLockedOn;
+		Movement->bUseControllerDesiredRotation = bRollSavedUseControllerDesiredRotation;
+		Movement->StopMovementImmediately();
+		Movement->MaxWalkSpeed = JogSpeed;
+	}
 }
 
 bool AExceptionCharacter::DoParry()
@@ -299,7 +440,6 @@ void AExceptionCharacter::PerformAttackTrace(float Damage, float GroggyDamage)
 
 	FCollisionObjectQueryParams ObjectParams;
 	ObjectParams.AddObjectTypesToQuery(ECC_Pawn);
-	ObjectParams.AddObjectTypesToQuery(ECC_WorldDynamic);
 
 	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(ExceptionPlayerAttackTrace), false, this);
 	QueryParams.AddIgnoredActor(this);
@@ -319,24 +459,40 @@ void AExceptionCharacter::PerformAttackTrace(float Damage, float GroggyDamage)
 		return;
 	}
 
-	TSet<AActor*> DamagedActors;
+	AActor* HitStopTarget = nullptr;
 	for (const FHitResult& Hit : Hits)
 	{
 		AActor* HitActor = Hit.GetActor();
-		if (!HitActor || DamagedActors.Contains(HitActor))
+		const TWeakObjectPtr<AActor> HitActorPtr(HitActor);
+		if (!HitActor || DamagedActorsThisAttack.Contains(HitActorPtr))
 		{
 			continue;
 		}
 
-		DamagedActors.Add(HitActor);
 		const float EffectiveDamage = GetEffectiveAttackDamage(Damage, HitActor);
+		bool bDamageApplied = false;
 		if (HitActor->GetClass()->ImplementsInterface(UBRCombatInterface::StaticClass()))
 		{
-			IBRCombatInterface::Execute_ReceiveCombatHit(HitActor, EffectiveDamage, GroggyDamage, this);
+			bDamageApplied = IBRCombatInterface::Execute_ReceiveCombatHit(HitActor, EffectiveDamage, GroggyDamage, this);
 		}
 		else
 		{
-			UGameplayStatics::ApplyDamage(HitActor, EffectiveDamage, GetController(), this, UDamageType::StaticClass());
+			bDamageApplied = UGameplayStatics::ApplyDamage(
+				HitActor,
+				EffectiveDamage,
+				GetController(),
+				this,
+				UDamageType::StaticClass()) > 0.0f;
+		}
+		if (!bDamageApplied)
+		{
+			continue;
+		}
+
+		DamagedActorsThisAttack.Add(HitActorPtr);
+		if (!HitStopTarget)
+		{
+			HitStopTarget = HitActor;
 		}
 		BP_AttackHit(HitActor, EffectiveDamage);
 		++LastAttackHitCount;
@@ -350,7 +506,61 @@ void AExceptionCharacter::PerformAttackTrace(float Damage, float GroggyDamage)
 	if (LastAttackHitCount > 0)
 	{
 		PlayHitSfx();
+		if (!bHitStopTriggeredThisAttack)
+		{
+			bHitStopTriggeredThisAttack = true;
+			StartHitStop(HitStopTarget);
+		}
 	}
+}
+
+void AExceptionCharacter::StartHitStop(AActor* HitActor)
+{
+	if (!GetWorld() || HitStopDuration <= 0.0f)
+	{
+		return;
+	}
+
+	if (!bHitStopActive)
+	{
+		SavedPlayerCustomTimeDilation = CustomTimeDilation;
+		bHitStopActive = true;
+	}
+	CustomTimeDilation = HitStopTimeDilation;
+
+	if (IsValid(HitActor) && HitActor != this)
+	{
+		const TWeakObjectPtr<AActor> HitActorPtr(HitActor);
+		if (!HitStopActorDilations.Contains(HitActorPtr))
+		{
+			HitStopActorDilations.Add(HitActorPtr, HitActor->CustomTimeDilation);
+		}
+		HitActor->CustomTimeDilation = HitStopTimeDilation;
+	}
+
+	GetWorldTimerManager().ClearTimer(HitStopTimerHandle);
+	GetWorldTimerManager().SetTimer(HitStopTimerHandle, this, &AExceptionCharacter::ClearHitStop, HitStopDuration, false);
+}
+
+void AExceptionCharacter::ClearHitStop()
+{
+	GetWorldTimerManager().ClearTimer(HitStopTimerHandle);
+	if (bHitStopActive)
+	{
+		CustomTimeDilation = SavedPlayerCustomTimeDilation;
+	}
+
+	for (const TPair<TWeakObjectPtr<AActor>, float>& Pair : HitStopActorDilations)
+	{
+		if (AActor* HitActor = Pair.Key.Get())
+		{
+			HitActor->CustomTimeDilation = Pair.Value;
+		}
+	}
+
+	bHitStopActive = false;
+	SavedPlayerCustomTimeDilation = 1.0f;
+	HitStopActorDilations.Reset();
 }
 
 float AExceptionCharacter::GetEffectiveAttackDamage(float BaseDamage, AActor* TargetActor) const
@@ -375,7 +585,11 @@ float AExceptionCharacter::TakeDamage(float Damage, FDamageEvent const& DamageEv
 		return 0.0f;
 	}
 
-	if (bIsParryActive)
+	const UBRBossDamageType* BossDamageType = DamageEvent.DamageTypeClass
+		? Cast<UBRBossDamageType>(DamageEvent.DamageTypeClass->GetDefaultObject())
+		: nullptr;
+	const bool bCanParryIncomingDamage = BossDamageType && BossDamageType->CanBeParried();
+	if (bIsParryActive && bCanParryIncomingDamage)
 	{
 		EndParryWindow();
 
@@ -446,9 +660,28 @@ void AExceptionCharacter::SetCombatState(EBRPlayerCombatState NewState)
 	}
 
 	const EBRPlayerCombatState PreviousState = CombatState;
+	const bool bFinishedStaminaAction = PreviousState == EBRPlayerCombatState::LightAttack
+		|| PreviousState == EBRPlayerCombatState::HeavyAttack
+		|| PreviousState == EBRPlayerCombatState::Dodge
+		|| PreviousState == EBRPlayerCombatState::Parry;
+	if (bFinishedStaminaAction)
+	{
+		LastStaminaSpendTime = GetWorld() ? GetWorld()->GetTimeSeconds() : LastStaminaSpendTime;
+	}
+
 	if (PreviousState == EBRPlayerCombatState::Dodge && NewState != EBRPlayerCombatState::Dodge)
 	{
 		EndDodgeRoll();
+	}
+	if ((PreviousState == EBRPlayerCombatState::LightAttack || PreviousState == EBRPlayerCombatState::HeavyAttack)
+		&& NewState != PreviousState)
+	{
+		EndAttackHitWindow();
+		DamagedActorsThisAttack.Reset();
+		if (PreviousState == EBRPlayerCombatState::LightAttack)
+		{
+			CurrentLightAttackStepDuration = 0.0f;
+		}
 	}
 	if (PreviousState == EBRPlayerCombatState::Healing && NewState != EBRPlayerCombatState::Healing)
 	{

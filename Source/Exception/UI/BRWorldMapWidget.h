@@ -48,6 +48,7 @@ public:
 	bool IsFullMapMode() const { return bFullMapMode; }
 
 protected:
+	virtual TSharedRef<SWidget> RebuildWidget() override;
 	virtual void NativeConstruct() override;
 	virtual void NativeDestruct() override;
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
@@ -67,6 +68,19 @@ private:
 
 	UFUNCTION()
 	void HandleMapRegionUnlocked(FName RegionId, int32 UnlockedCount);
+
+	/** Native defaults stay playable, while a Blueprint subclass can tune the final HUD layout. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Exception|Map|Layout", meta=(AllowPrivateAccess="true"))
+	FVector2D MiniMapFrameSize = FVector2D(340.0f, 260.0f);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Exception|Map|Layout", meta=(AllowPrivateAccess="true"))
+	FVector2D MiniMapScreenMargin = FVector2D(28.0f, 28.0f);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Exception|Map|Layout", meta=(AllowPrivateAccess="true"))
+	FVector2D FullMapFrameSize = FVector2D(1180.0f, 740.0f);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Exception|Map|Layout", meta=(AllowPrivateAccess="true"))
+	FVector2D MiniMapWorldSpan = FVector2D(5000.0f, 3900.0f);
 
 	UPROPERTY()
 	TObjectPtr<UBorder> FullScreenShade;

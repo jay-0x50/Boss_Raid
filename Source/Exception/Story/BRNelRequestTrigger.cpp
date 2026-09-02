@@ -1,5 +1,6 @@
 #include "BRNelRequestTrigger.h"
 
+#include "BRHiddenStorySubsystem.h"
 #include "BRNarrativeQueueSubsystem.h"
 #include "Story/BRNelCompanion.h"
 #include "Player/Character/ExceptionCharacter.h"
@@ -40,11 +41,31 @@ ABRNelRequestTrigger::ABRNelRequestTrigger()
 void ABRNelRequestTrigger::BeginPlay()
 {
 	Super::BeginPlay();
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UBRHiddenStorySubsystem* Story = GI->GetSubsystem<UBRHiddenStorySubsystem>())
+		{
+			Story->OnNarrativeBeatConsumed.AddDynamic(this, &ABRNelRequestTrigger::HandleNarrativeBeatConsumed);
+		}
+	}
+	RefreshConsumedState();
 
 	if (TriggerBox)
 	{
 		TriggerBox->OnComponentBeginOverlap.AddDynamic(this, &ABRNelRequestTrigger::OnRequestBeginOverlap);
 	}
+}
+
+void ABRNelRequestTrigger::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UBRHiddenStorySubsystem* Story = GI->GetSubsystem<UBRHiddenStorySubsystem>())
+		{
+			Story->OnNarrativeBeatConsumed.RemoveDynamic(this, &ABRNelRequestTrigger::HandleNarrativeBeatConsumed);
+		}
+	}
+	Super::EndPlay(EndPlayReason);
 }
 
 void ABRNelRequestTrigger::OnRequestBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
@@ -56,6 +77,25 @@ void ABRNelRequestTrigger::OnRequestBeginOverlap(UPrimitiveComponent* Overlapped
 	}
 
 	bWasTriggered = true;
+	if (bTriggerOnce)
+	{
+		if (UGameInstance* GI = GetGameInstance())
+		{
+			if (UBRHiddenStorySubsystem* Story = GI->GetSubsystem<UBRHiddenStorySubsystem>())
+			{
+				if (!Story->TryConsumeNarrativeBeat(GetResolvedBeatId()))
+				{
+					ApplyConsumedState();
+					if (bDestroyOnComplete)
+					{
+						Destroy();
+					}
+					return;
+				}
+			}
+		}
+	}
+
 	if (bCompletesRequest && !RequestId.IsNone())
 	{
 		PlayerCharacter->CompleteNelHiddenRequest(RequestId);
@@ -67,7 +107,7 @@ void ABRNelRequestTrigger::OnRequestBeginOverlap(UPrimitiveComponent* Overlapped
 		{
 			if (UBRNarrativeQueueSubsystem* StoryQueue = GI->GetSubsystem<UBRNarrativeQueueSubsystem>())
 			{
-				StoryQueue->ShowNelLine(DisplayLine, bIsHiddenRequestHint, 4.5f);
+				StoryQueue->ShowNelLineDeferred(DisplayLine, bIsHiddenRequestHint, 4.5f);
 			}
 		}
 	}
@@ -82,13 +122,64 @@ void ABRNelRequestTrigger::OnRequestBeginOverlap(UPrimitiveComponent* Overlapped
 		GEngine->AddOnScreenDebugMessage(5102, 2.5f, FColor::Cyan, RequestCompletedMessage.ToString());
 	}
 
-	if (bTriggerOnce && TriggerBox)
-	{
-		TriggerBox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	}
+	ApplyConsumedState();
 
 	if (bDestroyOnComplete)
 	{
 		Destroy();
+	}
+}
+
+FName ABRNelRequestTrigger::GetResolvedBeatId() const
+{
+	return BeatId.IsNone() ? GetFName() : BeatId;
+}
+
+void ABRNelRequestTrigger::RefreshConsumedState()
+{
+	if (!bTriggerOnce)
+	{
+		return;
+	}
+
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (const UBRHiddenStorySubsystem* Story = GI->GetSubsystem<UBRHiddenStorySubsystem>())
+		{
+			if (Story->IsNarrativeBeatConsumed(GetResolvedBeatId()))
+			{
+				ApplyConsumedState();
+			}
+			else
+			{
+				ApplyAvailableState();
+			}
+		}
+	}
+}
+
+void ABRNelRequestTrigger::ApplyConsumedState()
+{
+	bWasTriggered = true;
+	if (bTriggerOnce && TriggerBox)
+	{
+		TriggerBox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
+}
+
+void ABRNelRequestTrigger::ApplyAvailableState()
+{
+	bWasTriggered = false;
+	if (bTriggerOnce && TriggerBox)
+	{
+		TriggerBox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	}
+}
+
+void ABRNelRequestTrigger::HandleNarrativeBeatConsumed(FName PersistentId)
+{
+	if (PersistentId.IsNone() || PersistentId == GetResolvedBeatId())
+	{
+		RefreshConsumedState();
 	}
 }

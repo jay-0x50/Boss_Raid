@@ -82,6 +82,10 @@ bool ABRBossBase::CompleteExecution(float Damage, AActor* Executor)
 		PlayCameraFeedbackForActor(Executor, 1.25f, 0.5f);
 	}
 	RefreshPhaseByHP();
+	if (TeamCoordinator)
+	{
+		TeamCoordinator->NotifyMemberHealthChanged(this);
+	}
 
 	if (!bIsDead)
 	{

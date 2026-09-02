@@ -25,6 +25,10 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Story")
+	FName BeatId = NAME_None;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Story")
 	bool bPlayOnStart = true;
@@ -48,6 +52,11 @@ protected:
 	FText OpeningNelLine;
 
 private:
+	UFUNCTION()
+	void HandleNarrativeBeatConsumed(FName PersistentId);
+
+	FName GetResolvedBeatId() const;
+	void RefreshPersistentState();
 	void ShowNextShot();
 	void FinishIntro();
 	void RestorePlayer();
@@ -61,4 +70,5 @@ private:
 	FTimerHandle IntroTimer;
 	int32 ShotIndex = 0;
 	bool bDidPlay = false;
+	bool bIntroStarted = false;
 };

@@ -34,6 +34,9 @@ struct FBRNarrativeMessage
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Exception|Story")
 	bool bHiddenHint = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Exception|Story")
+	bool bDeferDuringCombat = false;
 };
 
 UCLASS()
@@ -48,10 +51,19 @@ public:
 	void AddMessage(const FBRNarrativeMessage& Message);
 
 	UFUNCTION(BlueprintCallable, Category="Exception|Story")
+	void AddDeferredMessage(const FBRNarrativeMessage& Message);
+
+	UFUNCTION(BlueprintCallable, Category="Exception|Story")
 	void ShowSystemLog(const FText& Text, float ShowTime = 4.0f, const FText& Title = FText());
 
 	UFUNCTION(BlueprintCallable, Category="Exception|Story")
 	void ShowNelLine(const FText& Text, bool bHiddenHint = false, float ShowTime = 4.5f);
+
+	UFUNCTION(BlueprintCallable, Category="Exception|Story")
+	void ShowSystemLogDeferred(const FText& Text, float ShowTime = 4.0f, const FText& Title = FText());
+
+	UFUNCTION(BlueprintCallable, Category="Exception|Story")
+	void ShowNelLineDeferred(const FText& Text, bool bHiddenHint = false, float ShowTime = 4.5f);
 
 	UFUNCTION(BlueprintCallable, Category="Exception|Story")
 	void ShowBossLine(const FText& BossTitle, const FText& Text, float ShowTime = 4.5f);
@@ -68,6 +80,8 @@ public:
 private:
 	void TryShowNext();
 	void FinishMessage();
+	void ScheduleCombatRetry();
+	bool IsCombatActive() const;
 	APlayerController* GetLocalPC() const;
 
 	UPROPERTY(Transient)
@@ -77,4 +91,5 @@ private:
 	TObjectPtr<UUserWidget> ActiveWidget;
 
 	FTimerHandle MessageTimer;
+	FTimerHandle CombatRetryTimer;
 };

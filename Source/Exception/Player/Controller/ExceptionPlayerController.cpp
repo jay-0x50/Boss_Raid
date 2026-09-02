@@ -13,6 +13,7 @@
 #include "GameFramework/InputSettings.h"
 #include "InputMappingContext.h"
 #include "Kismet/GameplayStatics.h"
+#include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
 #include "Widgets/Input/SVirtualJoystick.h"
 
@@ -39,7 +40,15 @@ void AExceptionPlayerController::BeginPlay()
 
 	if (IsInTitleLevel())
 	{
-		ShowTitleMenuWidget();
+		// Let the legacy title Level Blueprint finish first. ShowTitleMenuWidget
+		// adopts that widget when present, preventing a duplicate menu layer.
+		GetWorldTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this]()
+		{
+			if (IsInTitleLevel())
+			{
+				ShowTitleMenuWidget();
+			}
+		}));
 	}
 	else
 	{
@@ -133,8 +142,8 @@ void AExceptionPlayerController::SetupInputComponent()
 		InventoryBinding.bExecuteWhenPaused = true;
 		FInputKeyBinding& MapBinding = InputComponent->BindKey(EKeys::M, IE_Pressed, this, &AExceptionPlayerController::ToggleWorldMapWidget);
 		MapBinding.bExecuteWhenPaused = true;
-		InputComponent->BindKey(EKeys::Q, IE_Pressed, this, &AExceptionPlayerController::UseHotbarSlotQ);
-		InputComponent->BindKey(EKeys::E, IE_Pressed, this, &AExceptionPlayerController::UseHotbarSlotE);
+		// Q and E belong to the character combat input (flask and interact/execution).
+		// Keeping raw controller bindings on the same keys can trigger two actions from one press.
 		InputComponent->BindKey(EKeys::R, IE_Pressed, this, &AExceptionPlayerController::UseHotbarSlotR);
 		if (bEnableDemoDebugHotkeys)
 		{

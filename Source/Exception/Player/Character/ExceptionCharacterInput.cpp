@@ -10,6 +10,7 @@
 #include "InputAction.h"
 #include "InputActionValue.h"
 #include "InputMappingContext.h"
+#include "Player/Controller/ExceptionPlayerController.h"
 #include "TimerManager.h"
 #include "World/BRBossActivationPlate.h"
 
@@ -22,7 +23,9 @@ void AExceptionCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInput
 
 		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &AExceptionCharacter::Move);
 		EnhancedInputComponent->BindAction(MouseLookAction, ETriggerEvent::Triggered, this, &AExceptionCharacter::Look);
+		EnhancedInputComponent->BindAction(MouseLookAction, ETriggerEvent::Completed, this, &AExceptionCharacter::LookInputCompleted);
 		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &AExceptionCharacter::Look);
+		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Completed, this, &AExceptionCharacter::LookInputCompleted);
 
 		if (LightAttackAction)
 		{
@@ -77,7 +80,26 @@ void AExceptionCharacter::Move(const FInputActionValue& Value)
 void AExceptionCharacter::Look(const FInputActionValue& Value)
 {
 	const FVector2D LookAxisVector = Value.Get<FVector2D>();
+	const float HorizontalMagnitude = FMath::Abs(LookAxisVector.X);
+	if (bIsLockedOn)
+	{
+		if (HorizontalMagnitude <= LockOnSwitchInputResetThreshold)
+		{
+			bLockOnSwitchInputReady = true;
+		}
+		else if (bLockOnSwitchInputReady && HorizontalMagnitude >= LockOnSwitchInputThreshold)
+		{
+			SwitchLockOnTarget(FMath::Sign(LookAxisVector.X));
+			bLockOnSwitchInputReady = false;
+		}
+	}
+
 	DoLook(LookAxisVector.X, LookAxisVector.Y);
+}
+
+void AExceptionCharacter::LookInputCompleted()
+{
+	bLockOnSwitchInputReady = true;
 }
 
 void AExceptionCharacter::LightAttackPressed()
@@ -166,6 +188,12 @@ void AExceptionCharacter::BossPlate3Pressed()
 
 void AExceptionCharacter::ActivateBossPlateByIndex(int32 PlateIndex)
 {
+	const AExceptionPlayerController* PlayerController = Cast<AExceptionPlayerController>(GetController());
+	if (!PlayerController || !PlayerController->AreDemoDebugHotkeysEnabled())
+	{
+		return;
+	}
+
 	ABRBossActivationPlate::ActivatePlateByIndex(this, PlateIndex, this);
 }
 
@@ -187,6 +215,7 @@ void AExceptionCharacter::SetupRuntimeCombatInput(UEnhancedInputComponent* Enhan
 		RuntimeLightAttackAction = NewObject<UInputAction>(this, TEXT("IA_RuntimeLightAttack"));
 		RuntimeLightAttackAction->ValueType = EInputActionValueType::Boolean;
 		RuntimeCombatMappingContext->MapKey(RuntimeLightAttackAction, EKeys::LeftMouseButton);
+		RuntimeCombatMappingContext->MapKey(RuntimeLightAttackAction, EKeys::Gamepad_RightShoulder);
 		EnhancedInputComponent->BindAction(RuntimeLightAttackAction, ETriggerEvent::Started, this, &AExceptionCharacter::LightAttackPressed);
 		bNeedsRuntimeMapping = true;
 	}
@@ -196,6 +225,7 @@ void AExceptionCharacter::SetupRuntimeCombatInput(UEnhancedInputComponent* Enhan
 		RuntimeHeavyAttackAction = NewObject<UInputAction>(this, TEXT("IA_RuntimeHeavyAttack"));
 		RuntimeHeavyAttackAction->ValueType = EInputActionValueType::Boolean;
 		RuntimeCombatMappingContext->MapKey(RuntimeHeavyAttackAction, EKeys::RightMouseButton);
+		RuntimeCombatMappingContext->MapKey(RuntimeHeavyAttackAction, EKeys::Gamepad_RightTrigger);
 		EnhancedInputComponent->BindAction(RuntimeHeavyAttackAction, ETriggerEvent::Started, this, &AExceptionCharacter::HeavyAttackPressed);
 		bNeedsRuntimeMapping = true;
 	}
@@ -205,6 +235,7 @@ void AExceptionCharacter::SetupRuntimeCombatInput(UEnhancedInputComponent* Enhan
 		RuntimeDodgeAction = NewObject<UInputAction>(this, TEXT("IA_RuntimeDodge"));
 		RuntimeDodgeAction->ValueType = EInputActionValueType::Boolean;
 		RuntimeCombatMappingContext->MapKey(RuntimeDodgeAction, EKeys::LeftShift);
+		RuntimeCombatMappingContext->MapKey(RuntimeDodgeAction, EKeys::Gamepad_FaceButton_Right);
 		EnhancedInputComponent->BindAction(RuntimeDodgeAction, ETriggerEvent::Started, this, &AExceptionCharacter::DodgePressed);
 		EnhancedInputComponent->BindAction(RuntimeDodgeAction, ETriggerEvent::Completed, this, &AExceptionCharacter::DodgeReleased);
 		bNeedsRuntimeMapping = true;
@@ -215,6 +246,7 @@ void AExceptionCharacter::SetupRuntimeCombatInput(UEnhancedInputComponent* Enhan
 		RuntimeParryAction = NewObject<UInputAction>(this, TEXT("IA_RuntimeParry"));
 		RuntimeParryAction->ValueType = EInputActionValueType::Boolean;
 		RuntimeCombatMappingContext->MapKey(RuntimeParryAction, EKeys::F);
+		RuntimeCombatMappingContext->MapKey(RuntimeParryAction, EKeys::Gamepad_LeftShoulder);
 		EnhancedInputComponent->BindAction(RuntimeParryAction, ETriggerEvent::Started, this, &AExceptionCharacter::ParryPressed);
 		bNeedsRuntimeMapping = true;
 	}
@@ -224,6 +256,8 @@ void AExceptionCharacter::SetupRuntimeCombatInput(UEnhancedInputComponent* Enhan
 		RuntimeInteractAction = NewObject<UInputAction>(this, TEXT("IA_RuntimeInteract"));
 		RuntimeInteractAction->ValueType = EInputActionValueType::Boolean;
 		RuntimeCombatMappingContext->MapKey(RuntimeInteractAction, EKeys::E);
+		// FaceButton_Bottom is already Jump in IMC_Default, so Y/triangle stays conflict-free.
+		RuntimeCombatMappingContext->MapKey(RuntimeInteractAction, EKeys::Gamepad_FaceButton_Top);
 		EnhancedInputComponent->BindAction(RuntimeInteractAction, ETriggerEvent::Started, this, &AExceptionCharacter::InteractPressed);
 		bNeedsRuntimeMapping = true;
 	}
@@ -233,6 +267,7 @@ void AExceptionCharacter::SetupRuntimeCombatInput(UEnhancedInputComponent* Enhan
 		RuntimeLockOnAction = NewObject<UInputAction>(this, TEXT("IA_RuntimeLockOn"));
 		RuntimeLockOnAction->ValueType = EInputActionValueType::Boolean;
 		RuntimeCombatMappingContext->MapKey(RuntimeLockOnAction, EKeys::Tab);
+		RuntimeCombatMappingContext->MapKey(RuntimeLockOnAction, EKeys::Gamepad_RightThumbstick);
 		EnhancedInputComponent->BindAction(RuntimeLockOnAction, ETriggerEvent::Started, this, &AExceptionCharacter::LockOnPressed);
 		bNeedsRuntimeMapping = true;
 	}
@@ -242,27 +277,30 @@ void AExceptionCharacter::SetupRuntimeCombatInput(UEnhancedInputComponent* Enhan
 		RuntimeUseFlaskAction = NewObject<UInputAction>(this, TEXT("IA_RuntimeUseFlask"));
 		RuntimeUseFlaskAction->ValueType = EInputActionValueType::Boolean;
 		RuntimeCombatMappingContext->MapKey(RuntimeUseFlaskAction, EKeys::Q);
+		RuntimeCombatMappingContext->MapKey(RuntimeUseFlaskAction, EKeys::Gamepad_FaceButton_Left);
 		EnhancedInputComponent->BindAction(RuntimeUseFlaskAction, ETriggerEvent::Started, this, &AExceptionCharacter::UseFlaskPressed);
 		bNeedsRuntimeMapping = true;
 	}
 
-	RuntimeBossPlate1Action = NewObject<UInputAction>(this, TEXT("IA_RuntimeBossPlate1"));
-	RuntimeBossPlate1Action->ValueType = EInputActionValueType::Boolean;
-	RuntimeCombatMappingContext->MapKey(RuntimeBossPlate1Action, EKeys::One);
-	EnhancedInputComponent->BindAction(RuntimeBossPlate1Action, ETriggerEvent::Started, this, &AExceptionCharacter::BossPlate1Pressed);
-	bNeedsRuntimeMapping = true;
+	const AExceptionPlayerController* ExceptionController = Cast<AExceptionPlayerController>(GetController());
+	if (ExceptionController && ExceptionController->AreDemoDebugHotkeysEnabled())
+	{
+		RuntimeBossPlate1Action = NewObject<UInputAction>(this, TEXT("IA_RuntimeBossPlate1"));
+		RuntimeBossPlate1Action->ValueType = EInputActionValueType::Boolean;
+		RuntimeCombatMappingContext->MapKey(RuntimeBossPlate1Action, EKeys::One);
+		EnhancedInputComponent->BindAction(RuntimeBossPlate1Action, ETriggerEvent::Started, this, &AExceptionCharacter::BossPlate1Pressed);
 
-	RuntimeBossPlate2Action = NewObject<UInputAction>(this, TEXT("IA_RuntimeBossPlate2"));
-	RuntimeBossPlate2Action->ValueType = EInputActionValueType::Boolean;
-	RuntimeCombatMappingContext->MapKey(RuntimeBossPlate2Action, EKeys::Two);
-	EnhancedInputComponent->BindAction(RuntimeBossPlate2Action, ETriggerEvent::Started, this, &AExceptionCharacter::BossPlate2Pressed);
-	bNeedsRuntimeMapping = true;
+		RuntimeBossPlate2Action = NewObject<UInputAction>(this, TEXT("IA_RuntimeBossPlate2"));
+		RuntimeBossPlate2Action->ValueType = EInputActionValueType::Boolean;
+		RuntimeCombatMappingContext->MapKey(RuntimeBossPlate2Action, EKeys::Two);
+		EnhancedInputComponent->BindAction(RuntimeBossPlate2Action, ETriggerEvent::Started, this, &AExceptionCharacter::BossPlate2Pressed);
 
-	RuntimeBossPlate3Action = NewObject<UInputAction>(this, TEXT("IA_RuntimeBossPlate3"));
-	RuntimeBossPlate3Action->ValueType = EInputActionValueType::Boolean;
-	RuntimeCombatMappingContext->MapKey(RuntimeBossPlate3Action, EKeys::Three);
-	EnhancedInputComponent->BindAction(RuntimeBossPlate3Action, ETriggerEvent::Started, this, &AExceptionCharacter::BossPlate3Pressed);
-	bNeedsRuntimeMapping = true;
+		RuntimeBossPlate3Action = NewObject<UInputAction>(this, TEXT("IA_RuntimeBossPlate3"));
+		RuntimeBossPlate3Action->ValueType = EInputActionValueType::Boolean;
+		RuntimeCombatMappingContext->MapKey(RuntimeBossPlate3Action, EKeys::Three);
+		EnhancedInputComponent->BindAction(RuntimeBossPlate3Action, ETriggerEvent::Started, this, &AExceptionCharacter::BossPlate3Pressed);
+		bNeedsRuntimeMapping = true;
+	}
 
 	if (bNeedsRuntimeMapping)
 	{

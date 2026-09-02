@@ -1,6 +1,7 @@
 #include "Boss/Pattern/BRPatternBossBase.h"
 
 #include "Boss/AI/BRBossAIController.h"
+#include "Combat/BRBossDamageType.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "DrawDebugHelpers.h"
@@ -56,7 +57,8 @@ bool ABRPatternBossBase::CanUseAttack(const FBRBossPatternData& Attack, float Pl
 float ABRPatternBossBase::GetAttackCool(const FBRBossPatternData& Attack) const
 {
 	const float PhaseMultiplier = BossPhase == EBRBossPhase::Phase2 ? Phase2CooldownMultiplier : 1.0f;
-	return Attack.Cooldown * PhaseMultiplier;
+	const float EnrageMultiplier = bIsEnraged ? EnrageCooldownMultiplier : 1.0f;
+	return Attack.Cooldown * PhaseMultiplier * EnrageMultiplier;
 }
 
 UNiagaraSystem* ABRPatternBossBase::ResolvePatternEffect(const FBRBossPatternData& Pattern, bool bTelegraph) const
@@ -128,10 +130,11 @@ FTransform ABRPatternBossBase::GetPatternEffectTransform(
 		return FTransform(GetActorRotation(), GetAOECenter(Pattern, HeightOffset));
 	}
 
-	const bool bUseCurrentDashLocation = Pattern.PatternType == EBRBossPatternType::Dash && bAttackHasImpacted;
+	const bool bIsRetreat = Pattern.PatternType == EBRBossPatternType::Dash && Pattern.bDashAwayFromTarget;
+	const bool bUseCurrentDashLocation = Pattern.PatternType == EBRBossPatternType::Dash && bAttackHasImpacted && !bIsRetreat;
 	FVector EffectOrigin = bHasActivePattern && !bUseCurrentDashLocation ? LockedAttackOrigin : GetActorLocation();
 	EffectOrigin.Z += HeightOffset;
-	const FVector EffectDirection = Pattern.PatternType == EBRBossPatternType::Dash
+	const FVector EffectDirection = Pattern.PatternType == EBRBossPatternType::Dash && !bIsRetreat
 		? GetLockedDashDirection(Pattern)
 		: (bHasActivePattern ? LockedAttackDirection : GetActorForwardVector());
 	const FVector EffectLocation = EffectOrigin + (EffectDirection.GetSafeNormal2D() * Pattern.ForwardOffset);
@@ -150,7 +153,11 @@ void ABRPatternBossBase::SpawnPatternEffect(
 		return;
 	}
 
-	if (!SocketName.IsNone() && SkeletalMeshComponent && SkeletalMeshComponent->DoesSocketExist(SocketName))
+	const bool bUseSocket = !Pattern.bDashAwayFromTarget
+		&& !SocketName.IsNone()
+		&& SkeletalMeshComponent
+		&& SkeletalMeshComponent->DoesSocketExist(SocketName);
+	if (bUseSocket)
 	{
 		UNiagaraFunctionLibrary::SpawnSystemAttached(
 			Effect,
@@ -316,12 +323,16 @@ void ABRPatternBossBase::PerformBossAttack(int32 AttackId)
 	else if (Pattern.PatternType == EBRBossPatternType::Dash)
 	{
 		DebugStart = DashStart;
-		DebugEnd = DashEnd + (DashDirection * Pattern.ForwardOffset);
+		// A retreat moves away after striking toward the locked target. Do not
+		// mirror its damage capsule into the escape direction.
+		DebugEnd = Pattern.bDashAwayFromTarget
+			? DashStart + (LockedAttackDirection * Pattern.ForwardOffset)
+			: DashEnd + (DashDirection * Pattern.ForwardOffset);
 		const FVector FlatStart(DebugStart.X, DebugStart.Y, 0.0f);
 		const FVector FlatEnd(DebugEnd.X, DebugEnd.Y, 0.0f);
 		const FVector ClosestPoint = FMath::ClosestPointOnSegment(FlatTarget, FlatStart, FlatEnd);
 		bTargetInsideHitShape = FVector::Dist(ClosestPoint, FlatTarget) <= Pattern.Radius;
-		HitDirection = DashDirection;
+		HitDirection = Pattern.bDashAwayFromTarget ? LockedAttackDirection : DashDirection;
 	}
 	else
 	{
@@ -350,12 +361,17 @@ void ABRPatternBossBase::PerformBossAttack(int32 AttackId)
 	float AppliedDamage = 0.0f;
 	if (bTargetInsideHitShape)
 	{
+		const float EffectiveDamage = Pattern.Damage * (bIsEnraged ? EnrageDamageMultiplier : 1.0f);
+		const bool bParryableDamage = Pattern.PatternType == EBRBossPatternType::Melee && Pattern.bCanBeParried;
+		const TSubclassOf<UDamageType> DamageTypeClass = bParryableDamage
+			? UBRParryableBossDamageType::StaticClass()
+			: UBRBossDamageType::StaticClass();
 		AppliedDamage = UGameplayStatics::ApplyDamage(
 			CurrentTarget,
-			Pattern.Damage,
+			EffectiveDamage,
 			GetController(),
 			this,
-			UDamageType::StaticClass());
+			DamageTypeClass);
 	}
 
 	if (AppliedDamage > 0.0f)

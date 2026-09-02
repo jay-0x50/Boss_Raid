@@ -48,6 +48,7 @@ void ABRSelvaraBoss::ConfigureSelvaraPatterns()
 	TailJoin.MinRange = 0.0f;
 	TailJoin.MaxRange = 430.0f;
 	TailJoin.Damage = 28.0f;
+	TailJoin.bCanBeParried = true;
 	TailJoin.Windup = 0.8f;
 	TailJoin.Cooldown = 2.0f;
 	TailJoin.Radius = 190.0f;

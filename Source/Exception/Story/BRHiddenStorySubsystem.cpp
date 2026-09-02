@@ -75,6 +75,71 @@ void UBRHiddenStorySubsystem::CollectHiddenFragment(int32 Amount)
 	RefreshHiddenEligibility();
 }
 
+bool UBRHiddenStorySubsystem::TryCollectHiddenFragment(FName FragmentId, int32 Amount)
+{
+	if (FragmentId.IsNone() || Amount <= 0 || CollectedHiddenFragmentIds.Contains(FragmentId))
+	{
+		return false;
+	}
+
+	CollectedHiddenFragmentIds.Add(FragmentId);
+	CollectHiddenFragment(Amount);
+	OnHiddenFragmentIdCollected.Broadcast(FragmentId);
+	return true;
+}
+
+bool UBRHiddenStorySubsystem::IsHiddenFragmentCollected(FName FragmentId) const
+{
+	return !FragmentId.IsNone() && CollectedHiddenFragmentIds.Contains(FragmentId);
+}
+
+TArray<FName> UBRHiddenStorySubsystem::GetCollectedHiddenFragmentIds() const
+{
+	TArray<FName> Result;
+	Result.Reserve(CollectedHiddenFragmentIds.Num());
+	for (const FName& FragmentId : CollectedHiddenFragmentIds)
+	{
+		Result.Add(FragmentId);
+	}
+	Result.Sort([](const FName& Left, const FName& Right)
+	{
+		return Left.LexicalLess(Right);
+	});
+	return Result;
+}
+
+bool UBRHiddenStorySubsystem::TryConsumeNarrativeBeat(FName BeatId)
+{
+	if (BeatId.IsNone() || ConsumedNarrativeBeatIds.Contains(BeatId))
+	{
+		return false;
+	}
+
+	ConsumedNarrativeBeatIds.Add(BeatId);
+	OnNarrativeBeatConsumed.Broadcast(BeatId);
+	return true;
+}
+
+bool UBRHiddenStorySubsystem::IsNarrativeBeatConsumed(FName BeatId) const
+{
+	return !BeatId.IsNone() && ConsumedNarrativeBeatIds.Contains(BeatId);
+}
+
+TArray<FName> UBRHiddenStorySubsystem::GetConsumedNarrativeBeatIds() const
+{
+	TArray<FName> Result;
+	Result.Reserve(ConsumedNarrativeBeatIds.Num());
+	for (const FName& BeatId : ConsumedNarrativeBeatIds)
+	{
+		Result.Add(BeatId);
+	}
+	Result.Sort([](const FName& Left, const FName& Right)
+	{
+		return Left.LexicalLess(Right);
+	});
+	return Result;
+}
+
 void UBRHiddenStorySubsystem::SetMimikatzAuthoritySeizedUnlocked(bool bUnlocked)
 {
 	bMimikatzAuthoritySeizedUnlocked = bUnlocked;
@@ -168,6 +233,8 @@ void UBRHiddenStorySubsystem::ApplySavedHiddenStoryState(const TArray<FName>& Re
 	RegisteredNelRequests.Reset();
 	CompletedNelRequests.Reset();
 	DefeatedMainBossIds.Reset();
+	ConsumedNarrativeBeatIds.Reset();
+	CollectedHiddenFragmentIds.Reset();
 
 	for (const FName& RequestId : RegisteredRequests)
 	{
@@ -203,11 +270,38 @@ void UBRHiddenStorySubsystem::ApplySavedHiddenStoryState(const TArray<FName>& Re
 	OnMainBossProgressChanged.Broadcast(NAME_None, DefeatedMainBossIds.Num());
 }
 
+void UBRHiddenStorySubsystem::ApplySavedOneShotState(const TArray<FName>& SavedConsumedBeatIds, const TArray<FName>& SavedCollectedFragmentIds)
+{
+	ConsumedNarrativeBeatIds.Reset();
+	CollectedHiddenFragmentIds.Reset();
+
+	for (const FName& BeatId : SavedConsumedBeatIds)
+	{
+		if (!BeatId.IsNone())
+		{
+			ConsumedNarrativeBeatIds.Add(BeatId);
+		}
+	}
+
+	for (const FName& FragmentId : SavedCollectedFragmentIds)
+	{
+		if (!FragmentId.IsNone())
+		{
+			CollectedHiddenFragmentIds.Add(FragmentId);
+		}
+	}
+
+	OnNarrativeBeatConsumed.Broadcast(NAME_None);
+	OnHiddenFragmentIdCollected.Broadcast(NAME_None);
+}
+
 void UBRHiddenStorySubsystem::ResetHiddenStoryState()
 {
 	RegisteredNelRequests.Reset();
 	CompletedNelRequests.Reset();
 	DefeatedMainBossIds.Reset();
+	ConsumedNarrativeBeatIds.Reset();
+	CollectedHiddenFragmentIds.Reset();
 	RegisterDefaultNelHiddenRequests();
 	HiddenFragmentCount = 0;
 	bMimikatzAuthoritySeizedUnlocked = false;
@@ -215,6 +309,8 @@ void UBRHiddenStorySubsystem::ResetHiddenStoryState()
 	LastResolvedEnding = EBRRuntimeEnding::None;
 	OnHiddenFragmentChanged.Broadcast(HiddenFragmentCount, RequiredHiddenFragmentCount);
 	OnMainBossProgressChanged.Broadcast(NAME_None, 0);
+	OnNarrativeBeatConsumed.Broadcast(NAME_None);
+	OnHiddenFragmentIdCollected.Broadcast(NAME_None);
 }
 
 void UBRHiddenStorySubsystem::RefreshHiddenEligibility()

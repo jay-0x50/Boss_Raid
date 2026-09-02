@@ -106,6 +106,9 @@ public:
 
 	UFUNCTION(Exec, BlueprintCallable, Category="Exception|Debug")
 	void DebugPrintHiddenStoryState();
+
+	/** Runtime-only shortcuts such as boss activation plates must stay behind this flag. */
+	bool AreDemoDebugHotkeysEnabled() const { return bEnableDemoDebugHotkeys; }
 	
 protected:
 
@@ -164,6 +167,9 @@ protected:
 	UPROPERTY(EditAnywhere, Category="Exception|Menu")
 	FName TitleLevelName = TEXT("L_Title");
 
+	UPROPERTY(EditAnywhere, Category="Exception|Title UI")
+	FName GameplayLevelName = TEXT("L_Runtime_Field");
+
 	UPROPERTY(EditAnywhere, Category="Exception|Debug")
 	bool bEnableDemoDebugHotkeys = false;
 
@@ -196,6 +202,18 @@ protected:
 	UFUNCTION()
 	void HandleInventorySlotChanged(int32 SlotIndex, const FBRInventorySlot& Slot);
 
+	UFUNCTION()
+	void HandleTitleNewGameClicked();
+
+	UFUNCTION()
+	void HandleTitleContinueClicked();
+
+	UFUNCTION()
+	void HandleTitleOptionsClicked();
+
+	UFUNCTION()
+	void HandleTitleQuitClicked();
+
 	void BindPlayerHUDToPawn();
 	void UnbindPlayerHUDFromPawn();
 	void BindInventoryWidgetToPawn();
@@ -207,6 +225,9 @@ protected:
 	void UpdateStaminaGauge(float CurrentValue, float MaxValue, float NormalizedValue);
 	void UpdateGroggyGauge(float NormalizedValue);
 	bool IsInTitleLevel() const;
+	void BindTitleMenuActions();
+	void RefreshTitleMenuState();
+	void SetTitleMenuStatus(const FText& Message);
 	void UseHotbarSlotQ();
 	void UseHotbarSlotE();
 	void UseHotbarSlotR();

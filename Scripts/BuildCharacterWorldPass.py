@@ -23,8 +23,8 @@ SPAWNERS = {
 
 NEL_BEATS = {
     "Awakening": {"location": (1500.0, 330.0, 95.0), "trigger": None},
-    "CaveExit": {"location": (2220.0, 260.0, 95.0), "trigger": "Story_Nel_CaveExit"},
-    "FirstRest": {"location": (2680.0, 170.0, 95.0), "trigger": "Story_Nel_FirstRest"},
+    "CaveExit": {"location": (1940.0, 420.0, 95.0), "trigger": "Story_Nel_CaveExit"},
+    "FirstRest": {"location": (2280.0, 560.0, 95.0), "trigger": "Story_Nel_FirstRest"},
     "PythonTrace": {"location": (2050.0, 4210.0, 105.0), "trigger": "Story_Nel_PythonTrace"},
     "PerlSigil": {"location": (2050.0, -3260.0, 105.0), "trigger": "Story_Nel_PerlSigil"},
     "RuntimeShard": {"location": (11380.0, 270.0, 115.0), "trigger": "Story_Nel_RuntimeShard"},
@@ -33,6 +33,18 @@ NEL_BEATS = {
 
 def log(message):
     unreal.log(f"[BuildCharacterWorldPass] {message}")
+
+
+def make_rotator(pitch=0.0, yaw=0.0, roll=0.0):
+    rotation = unreal.Rotator()
+    rotation.pitch = float(pitch)
+    rotation.yaw = float(yaw)
+    rotation.roll = float(roll)
+    return rotation
+
+
+def make_color(red, green, blue, alpha=255):
+    return unreal.Color(b=int(blue), g=int(green), r=int(red), a=int(alpha))
 
 
 def load_asset(path, expected):
@@ -63,11 +75,12 @@ def spawn_or_update(label, actor_class, location, rotation=(0.0, 0.0, 0.0), fold
     if actor and actor.get_class() != actor_class:
         subsystem.destroy_actor(actor)
         actor = None
-    rot = unreal.Rotator(roll=rotation[2], pitch=rotation[0], yaw=rotation[1])
+    rot = make_rotator(pitch=rotation[0], yaw=rotation[1], roll=rotation[2])
     if not actor:
         actor = subsystem.spawn_actor_from_class(actor_class, unreal.Vector(*location), rot)
         if not actor:
             raise RuntimeError(f"Could not spawn {label}")
+    actor.modify()
     actor.set_actor_label(label)
     actor.set_actor_location(unreal.Vector(*location), False, False)
     actor.set_actor_rotation(rot, False)
@@ -122,7 +135,7 @@ def build_spawn_buildings():
         side = data["side"]
         outward_yaw = -90.0 if side > 0.0 else 90.0
         spawner.set_actor_location(unreal.Vector(x, y + side * 165.0, z), False, False)
-        spawner.set_actor_rotation(unreal.Rotator(roll=0.0, pitch=0.0, yaw=outward_yaw), False)
+        spawner.set_actor_rotation(make_rotator(yaw=outward_yaw), False)
         spawner.set_folder_path(unreal.Name(f"World/Encounters/{key}/Logic"))
         for prop, value in (
             ("should_spawn_enemies_immediately", True),
@@ -153,7 +166,7 @@ def build_spawn_buildings():
 
         light_label = f"{ENCOUNTER_PREFIX}{key}_SpawnLight"
         desired.add(light_label)
-        color = unreal.Color(255, 38, 82, 255) if key in ("B", "D") else unreal.Color(35, 168, 255, 255)
+        color = make_color(255, 38, 82) if key in ("B", "D") else make_color(35, 168, 255)
         point_light(light_label, (x, y + side * 165.0, z + 170.0), color)
 
     for actor in actors():

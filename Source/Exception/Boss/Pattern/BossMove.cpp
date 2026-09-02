@@ -20,7 +20,8 @@ void ABRPatternBossBase::UpdateBossAI(float DeltaSeconds)
 		return;
 	}
 
-	const float DistanceToTarget = FVector::Dist(GetActorLocation(), CurrentTarget->GetActorLocation());
+	// Pattern hit shapes are planar, so eligibility must use the same metric.
+	const float DistanceToTarget = FVector::Dist2D(GetActorLocation(), CurrentTarget->GetActorLocation());
 	if (DistanceToTarget > DetectionRange)
 	{
 		if (CurrentAnimationStage != EBRBossAnimationStage::Idle)
@@ -147,5 +148,6 @@ void ABRPatternBossBase::KeepSpace(float DeltaSeconds, float PlayerDist)
 float ABRPatternBossBase::GetRunSpeed() const
 {
 	const float PhaseMultiplier = BossPhase == EBRBossPhase::Phase2 ? Phase2MoveSpeedMultiplier : 1.0f;
-	return RunSpeed * PhaseMultiplier;
+	const float EnrageMultiplier = bIsEnraged ? EnrageMoveSpeedMultiplier : 1.0f;
+	return RunSpeed * PhaseMultiplier * EnrageMultiplier;
 }

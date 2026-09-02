@@ -13,7 +13,7 @@ class EXCEPTION_API UBRSaveGame : public USaveGame
 
 public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Save")
-	int32 SaveVersion = 3;
+	int32 SaveVersion = 4;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Save")
 	FName SavedLevelName = NAME_None;
@@ -71,6 +71,12 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Save")
 	int32 HiddenFragmentCount = 0;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Save")
+	TArray<FName> ConsumedNarrativeBeatIds;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Save")
+	TArray<FName> CollectedHiddenFragmentIds;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Save")
 	bool bMimikatzAuthoritySeizedUnlocked = false;

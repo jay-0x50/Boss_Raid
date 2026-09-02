@@ -2,6 +2,7 @@
 
 #include "BRWorldMapWidget.h"
 #include "Blueprint/UserWidget.h"
+#include "Blueprint/WidgetLayoutLibrary.h"
 
 UBRWorldMapWidget* AExceptionPlayerController::ShowWorldMapWidget()
 {
@@ -16,7 +17,20 @@ UBRWorldMapWidget* AExceptionPlayerController::ShowWorldMapWidget()
 	}
 	if (WorldMapWidget && !WorldMapWidget->IsInViewport())
 	{
-		WorldMapWidget->AddToPlayerScreen(35);
+		// The demo is single-player. A global viewport layer keeps the minimap
+		// stable across PIE map travel and above the player-screen HUD layer.
+		WorldMapWidget->AddToViewport(35);
+		WorldMapWidget->SetAnchorsInViewport(FAnchors(0.0f, 0.0f));
+		WorldMapWidget->SetAlignmentInViewport(FVector2D::ZeroVector);
+		WorldMapWidget->SetPositionInViewport(FVector2D::ZeroVector, false);
+		int32 ViewportSizeX = 0;
+		int32 ViewportSizeY = 0;
+		GetViewportSize(ViewportSizeX, ViewportSizeY);
+		if (ViewportSizeX > 0 && ViewportSizeY > 0)
+		{
+			const float ViewportScale = FMath::Max(UWidgetLayoutLibrary::GetViewportScale(this), 0.01f);
+			WorldMapWidget->SetDesiredSizeInViewport(FVector2D(ViewportSizeX, ViewportSizeY) / ViewportScale);
+		}
 	}
 	return WorldMapWidget;
 }

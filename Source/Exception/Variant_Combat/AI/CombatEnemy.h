@@ -278,6 +278,9 @@ public:
 	/** Spawn location used as the return target after aggro is lost */
 	const FVector& GetHomeLocation() const { return HomeLocation; }
 
+	/** Read-only signal used by presentation systems that must wait until field combat ends. */
+	bool IsEngagedWithPlayer() const { return bHasAggro && CurrentHP > 0.0f; }
+
 public:
 
 	// ~begin ICombatAttacker interface

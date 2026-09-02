@@ -1,5 +1,6 @@
 #include "BRLoreLogTrigger.h"
 
+#include "BRHiddenStorySubsystem.h"
 #include "BRNarrativeQueueSubsystem.h"
 #include "Player/Character/ExceptionCharacter.h"
 #include "Components/BoxComponent.h"
@@ -39,11 +40,31 @@ ABRLoreLogTrigger::ABRLoreLogTrigger()
 void ABRLoreLogTrigger::BeginPlay()
 {
 	Super::BeginPlay();
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UBRHiddenStorySubsystem* Story = GI->GetSubsystem<UBRHiddenStorySubsystem>())
+		{
+			Story->OnNarrativeBeatConsumed.AddDynamic(this, &ABRLoreLogTrigger::HandleNarrativeBeatConsumed);
+		}
+	}
+	RefreshConsumedState();
 
 	if (TriggerBox)
 	{
 		TriggerBox->OnComponentBeginOverlap.AddDynamic(this, &ABRLoreLogTrigger::OnLogBeginOverlap);
 	}
+}
+
+void ABRLoreLogTrigger::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UBRHiddenStorySubsystem* Story = GI->GetSubsystem<UBRHiddenStorySubsystem>())
+		{
+			Story->OnNarrativeBeatConsumed.RemoveDynamic(this, &ABRLoreLogTrigger::HandleNarrativeBeatConsumed);
+		}
+	}
+	Super::EndPlay(EndPlayReason);
 }
 
 void ABRLoreLogTrigger::OnLogBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
@@ -54,14 +75,62 @@ void ABRLoreLogTrigger::OnLogBeginOverlap(UPrimitiveComponent* OverlappedCompone
 	}
 
 	bWasRead = true;
+	if (bTriggerOnce)
+	{
+		if (UGameInstance* GI = GetGameInstance())
+		{
+			if (UBRHiddenStorySubsystem* Story = GI->GetSubsystem<UBRHiddenStorySubsystem>())
+			{
+				if (!Story->TryConsumeNarrativeBeat(GetResolvedBeatId()))
+				{
+					ApplyConsumedState();
+					return;
+				}
+			}
+		}
+	}
+
 	if (UGameInstance* GI = GetGameInstance())
 	{
 		if (UBRNarrativeQueueSubsystem* StoryQueue = GI->GetSubsystem<UBRNarrativeQueueSubsystem>())
 		{
-			StoryQueue->ShowSystemLog(LogText, ShowTime, LogTitle);
+			StoryQueue->ShowSystemLogDeferred(LogText, ShowTime, LogTitle);
 		}
 	}
+	ApplyConsumedState();
+}
 
+FName ABRLoreLogTrigger::GetResolvedBeatId() const
+{
+	return BeatId.IsNone() ? GetFName() : BeatId;
+}
+
+void ABRLoreLogTrigger::RefreshConsumedState()
+{
+	if (!bTriggerOnce)
+	{
+		return;
+	}
+
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (const UBRHiddenStorySubsystem* Story = GI->GetSubsystem<UBRHiddenStorySubsystem>())
+		{
+			if (Story->IsNarrativeBeatConsumed(GetResolvedBeatId()))
+			{
+				ApplyConsumedState();
+			}
+			else
+			{
+				ApplyAvailableState();
+			}
+		}
+	}
+}
+
+void ABRLoreLogTrigger::ApplyConsumedState()
+{
+	bWasRead = true;
 	if (bTriggerOnce && TriggerBox)
 	{
 		TriggerBox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
@@ -70,5 +139,26 @@ void ABRLoreLogTrigger::OnLogBeginOverlap(UPrimitiveComponent* OverlappedCompone
 	if (bHideObjectAfterRead && PreviewMesh)
 	{
 		PreviewMesh->SetHiddenInGame(true);
+	}
+}
+
+void ABRLoreLogTrigger::ApplyAvailableState()
+{
+	bWasRead = false;
+	if (bTriggerOnce && TriggerBox)
+	{
+		TriggerBox->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	}
+	if (bHideObjectAfterRead && PreviewMesh)
+	{
+		PreviewMesh->SetHiddenInGame(false);
+	}
+}
+
+void ABRLoreLogTrigger::HandleNarrativeBeatConsumed(FName PersistentId)
+{
+	if (PersistentId.IsNone() || PersistentId == GetResolvedBeatId())
+	{
+		RefreshConsumedState();
 	}
 }

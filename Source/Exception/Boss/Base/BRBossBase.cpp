@@ -61,6 +61,13 @@ void ABRBossBase::BeginPlay()
 {
 	Super::BeginPlay();
 	InitialBossTransform = GetActorTransform();
+	if (VisualRoot)
+	{
+		// Blueprint component transforms are finalized by BeginPlay. Keep the
+		// authored per-boss forward-axis correction as the procedural baseline.
+		VisualRootBaseRelativeTransform = VisualRoot->GetRelativeTransform();
+		bVisualRootBaseTransformCaptured = true;
+	}
 
 	if (!GetController())
 	{
@@ -132,13 +139,6 @@ void ABRBossBase::Tick(float DeltaSeconds)
 
 void ABRBossBase::ApplyMeshVisualTransform()
 {
-	if (VisualRoot)
-	{
-		VisualRoot->SetRelativeLocation(FVector::ZeroVector);
-		VisualRoot->SetRelativeRotation(FRotator::ZeroRotator);
-		VisualRoot->SetRelativeScale3D(FVector::OneVector);
-	}
-
 	const bool bHasStaticMesh = MeshComponent && MeshComponent->GetStaticMesh();
 	const bool bHasSkeletalMesh = SkeletalMeshComponent && SkeletalMeshComponent->GetSkeletalMeshAsset();
 	const bool bUseSkeletalMesh = bHasSkeletalMesh && (VisualMeshType == EBRBossVisualMeshType::SkeletalMesh || !bHasStaticMesh);
@@ -197,11 +197,19 @@ void ABRBossBase::UpdateProceduralIdleMotion(float DeltaSeconds)
 		&& !bIsBeingExecuted
 		&& !bIsDead;
 
+	if (!bVisualRootBaseTransformCaptured)
+	{
+		VisualRootBaseRelativeTransform = VisualRoot->GetRelativeTransform();
+		bVisualRootBaseTransformCaptured = true;
+	}
+
+	const FVector BaseLocation = VisualRootBaseRelativeTransform.GetLocation();
+	const FQuat BaseRotation = VisualRootBaseRelativeTransform.GetRotation();
 	if (!bCanUseFallback)
 	{
 		ProceduralIdleBlendAlpha = 0.0f;
-		VisualRoot->SetRelativeLocation(FVector::ZeroVector);
-		VisualRoot->SetRelativeRotation(FRotator::ZeroRotator);
+		VisualRoot->SetRelativeLocationAndRotation(BaseLocation, BaseRotation.Rotator());
+		VisualRoot->SetRelativeScale3D(VisualRootBaseRelativeTransform.GetScale3D());
 		return;
 	}
 
@@ -211,8 +219,10 @@ void ABRBossBase::UpdateProceduralIdleMotion(float DeltaSeconds)
 	const float BobOffset = FMath::Sin(MotionPhase) * ProceduralIdleBobAmplitude * ProceduralIdleBlendAlpha;
 	const float LeanAngle = FMath::Sin(MotionPhase * 0.5f) * ProceduralIdleLeanAngle * ProceduralIdleBlendAlpha;
 
-	VisualRoot->SetRelativeLocation(FVector(0.0f, 0.0f, BobOffset));
-	VisualRoot->SetRelativeRotation(FRotator(LeanAngle, 0.0f, 0.0f));
+	const FVector LocalBob = BaseRotation.RotateVector(FVector(0.0f, 0.0f, BobOffset));
+	const FQuat LocalLean = FRotator(LeanAngle, 0.0f, 0.0f).Quaternion();
+	VisualRoot->SetRelativeLocationAndRotation(BaseLocation + LocalBob, (BaseRotation * LocalLean).Rotator());
+	VisualRoot->SetRelativeScale3D(VisualRootBaseRelativeTransform.GetScale3D());
 }
 
 void ABRBossBase::SetBossAnimationPlaying(bool bShouldPlay)

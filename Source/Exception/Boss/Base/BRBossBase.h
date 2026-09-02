@@ -57,6 +57,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE(FBRBossStateEvent);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FBRBossStatChanged, float, CurrentValue, float, MaxValue, float, NormalizedValue);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FBRBossExecutionEvent, AActor*, Executor);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FBRBossPhaseChanged, EBRBossPhase, NewPhase);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FBRBossEnrageChanged, bool, bEnraged);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBRBossAnimationStageEvent, EBRBossAnimationStage, Stage, FName, ActionName);
 
 UCLASS(Abstract, Blueprintable, BlueprintType)
@@ -100,6 +101,16 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="Exception|Boss")
 	EBRBossPhase GetBossPhase() const { return BossPhase; }
+
+	UFUNCTION(BlueprintPure, Category="Exception|Boss")
+	bool IsEnraged() const { return bIsEnraged; }
+
+	UFUNCTION(BlueprintCallable, Category="Exception|Boss")
+	void SetEnraged(bool bNewEnraged);
+
+	/** Enters Phase 2 through the normal transition path. */
+	UFUNCTION(BlueprintCallable, Category="Exception|Boss")
+	void ForcePhase2(bool bReplayTransitionIfAlreadyPhase2 = false);
 
 	UFUNCTION(BlueprintPure, Category="Exception|Team")
 	EBRBossTeamRole GetTeamRole() const { return TeamRole; }
@@ -189,6 +200,9 @@ public:
 	FBRBossPhaseChanged OnPhaseChanged;
 
 	UPROPERTY(BlueprintAssignable, Category="Exception|Events")
+	FBRBossEnrageChanged OnEnrageChanged;
+
+	UPROPERTY(BlueprintAssignable, Category="Exception|Events")
 	FBRBossStateEvent OnPhaseTransitionFinished;
 
 	UPROPERTY(BlueprintAssignable, Category="Exception|Events")
@@ -209,6 +223,9 @@ protected:
 
 	UFUNCTION(BlueprintImplementableEvent, Category="Exception|Boss")
 	void BP_BossIntroStarted();
+
+	UFUNCTION(BlueprintImplementableEvent, Category="Exception|Boss")
+	void BP_BossEnrageChanged(bool bNewEnraged);
 
 	UFUNCTION(BlueprintImplementableEvent, Category="Exception|Animation")
 	void BP_BossAnimationStageChanged(EBRBossAnimationStage Stage, FName ActionName);
@@ -354,6 +371,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|State")
 	bool bIsPhaseTransitioning = false;
 
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|State")
+	bool bIsEnraged = false;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Debug")
 	bool bShowDebug = false;
 
@@ -369,6 +389,8 @@ protected:
 	float VerticalFallSpeed = 0.0f;
 	float ProceduralIdleTime = 0.0f;
 	float ProceduralIdleBlendAlpha = 0.0f;
+	FTransform VisualRootBaseRelativeTransform = FTransform::Identity;
+	bool bVisualRootBaseTransformCaptured = false;
 	float ProceduralHitReactionTime = 0.0f;
 	FVector ProceduralHitReactionDirection = FVector::BackwardVector;
 	EBRBossAnimationStage CurrentAnimationStage = EBRBossAnimationStage::Idle;

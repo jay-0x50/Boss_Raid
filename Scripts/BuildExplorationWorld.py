@@ -74,6 +74,18 @@ def log(message):
     unreal.log(f"[BuildExplorationWorld] {message}")
 
 
+def make_rotator(pitch=0.0, yaw=0.0, roll=0.0):
+    rotation = unreal.Rotator()
+    rotation.pitch = float(pitch)
+    rotation.yaw = float(yaw)
+    rotation.roll = float(roll)
+    return rotation
+
+
+def make_color(red, green, blue, alpha=255):
+    return unreal.Color(b=int(blue), g=int(green), r=int(red), a=int(alpha))
+
+
 def subsystem():
     return unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
 
@@ -105,11 +117,12 @@ def spawn(label, cls, location, rotation=(0.0, 0.0, 0.0), folder="World/Explorat
     if actor and actor.get_class() != cls:
         subsystem().destroy_actor(actor)
         actor = None
-    rot = unreal.Rotator(roll=rotation[2], pitch=rotation[0], yaw=rotation[1])
+    rot = make_rotator(pitch=rotation[0], yaw=rotation[1], roll=rotation[2])
     if not actor:
         actor = subsystem().spawn_actor_from_class(cls, unreal.Vector(*location), rot)
     if not actor:
         raise RuntimeError(f"Could not spawn {label}")
+    actor.modify()
     actor.set_actor_label(label)
     actor.set_actor_location(unreal.Vector(*location), False, False)
     actor.set_actor_rotation(rot, False)
@@ -117,7 +130,8 @@ def spawn(label, cls, location, rotation=(0.0, 0.0, 0.0), folder="World/Explorat
     return actor
 
 
-def mesh(label, mesh_asset, material, location, scale, rotation=(0.0, 0.0, 0.0), collision=False, folder="World/Exploration"):
+def mesh(label, mesh_asset, material, location, scale, rotation=(0.0, 0.0, 0.0), collision=False,
+         folder="World/Exploration", mobility=unreal.ComponentMobility.STATIC):
     actor = spawn(label, unreal.StaticMeshActor.static_class(), location, rotation, folder)
     component = actor.get_component_by_class(unreal.StaticMeshComponent)
     component.set_static_mesh(mesh_asset)
@@ -126,6 +140,7 @@ def mesh(label, mesh_asset, material, location, scale, rotation=(0.0, 0.0, 0.0),
             component.set_material(index, material)
     component.set_collision_enabled(unreal.CollisionEnabled.QUERY_AND_PHYSICS if collision else unreal.CollisionEnabled.NO_COLLISION)
     component.set_collision_profile_name(unreal.Name("BlockAll" if collision else "NoCollision"))
+    component.set_mobility(mobility)
     actor.set_actor_enable_collision(collision)
     actor.set_actor_scale3d(unreal.Vector(*scale))
     return actor
@@ -219,11 +234,11 @@ def build_landmarks(loaded):
     fort, gate, wall, corner = loaded[FORT], loaded[GATE], loaded[WALL], loaded[CORNER]
     ruin_mat = loaded[BOULDER_MAT]
     landmarks = [
-        ("PythonRuin", (2680.0, 2540.0, 112.0), 102.0, unreal.Color(44, 138, 255, 255)),
-        ("PerlDescent", (6720.0, 2100.0, 196.0), -112.0, unreal.Color(255, 135, 38, 255)),
-        ("PerlArchive", (4700.0, -1820.0, 202.0), -128.0, unreal.Color(255, 105, 28, 255)),
-        ("RuntimeCollapse", (9100.0, -3200.0, 205.0), 46.0, unreal.Color(255, 38, 82, 255)),
-        ("CMDThreshold", (11340.0, -620.0, 190.0), 35.0, unreal.Color(255, 28, 68, 255)),
+        ("PythonRuin", (2680.0, 2540.0, 112.0), 102.0, make_color(44, 138, 255)),
+        ("PerlDescent", (6720.0, 2100.0, 196.0), -112.0, make_color(255, 135, 38)),
+        ("PerlArchive", (4700.0, -1820.0, 202.0), -128.0, make_color(255, 105, 28)),
+        ("RuntimeCollapse", (9100.0, -3200.0, 205.0), 46.0, make_color(255, 38, 82)),
+        ("CMDThreshold", (11340.0, -620.0, 190.0), 35.0, make_color(255, 28, 68)),
     ]
     for name, (x, y, z), yaw, color in landmarks:
         radians = math.radians(yaw)
@@ -261,7 +276,7 @@ def build_encounters(loaded):
     spawner_class = actor_class(SPAWNER_CLASS_PATH)
     enemy_class = actor_class(ENEMY_CLASS_PATH)
     theme_material = {"Python": loaded[PYTHON_MAT], "Perl": loaded[VRITRA_MAT], "CMD": loaded[CMD_MAT]}
-    theme_color = {"Python": unreal.Color(42, 142, 255, 255), "Perl": unreal.Color(255, 122, 35, 255), "CMD": unreal.Color(255, 32, 75, 255)}
+    theme_color = {"Python": make_color(42, 142, 255), "Perl": make_color(255, 122, 35), "CMD": make_color(255, 32, 75)}
     for key, (anchor, side, count, alive, theme) in ENCOUNTERS.items():
         x, y, z = anchor
         spawner_label = f"{PREFIX}Encounter_{key}_Spawner"
@@ -306,13 +321,14 @@ def build_story_gate(loaded, key, location, route_yaw, boss_id, line, camera_loc
     radians = math.radians(route_yaw)
     right_x, right_y = -math.sin(radians), math.cos(radians)
     material = loaded[BOULDER_MAT]
-    light_color = unreal.Color(48, 145, 255, 255) if boss_id == "SerpentPython" else unreal.Color(255, 126, 35, 255)
+    light_color = make_color(48, 145, 255) if boss_id == "SerpentPython" else make_color(255, 126, 35)
     for index, offset in enumerate((-300.0, 0.0, 300.0)):
         label = f"{PREFIX}StoryGate_{key}_Piece_{index}"
         desired.append(label)
         piece = mesh(label, loaded[BAR_GATE], material,
                      (location[0] + right_x * offset, location[1] + right_y * offset, location[2]),
-                     (0.86, 0.86, 1.32), (0.0, route_yaw + 90.0, 0.0), True, f"Story/World/Gates/{key}/Pieces")
+                     (0.86, 0.86, 1.32), (0.0, route_yaw + 90.0, 0.0), True,
+                     f"Story/World/Gates/{key}/Pieces", unreal.ComponentMobility.MOVABLE)
         pieces.append(piece)
 
     camera_label = f"{PREFIX}StoryGate_{key}_RevealCamera"
@@ -328,7 +344,11 @@ def build_story_gate(loaded, key, location, route_yaw, boss_id, line, camera_loc
     gate_actor.set_editor_property("required_boss_id", boss_id)
     gate_actor.set_editor_property("gate_pieces", pieces)
     gate_actor.set_editor_property("reveal_camera", camera)
-    gate_actor.set_editor_property("gate_open_line", line)
+    clean_gate_lines = {
+        "Python": "Python 봉인이 끝났어. 아래쪽 Perl 레이어로 가는 길이 복구되고 있어.",
+        "Vritra": "두 번째 봉인도 멎었어. 이제 최초의 명령이 있는 곳으로 내려갈 수 있어.",
+    }
+    gate_actor.set_editor_property("gate_open_line", clean_gate_lines.get(key, line))
     gate_actor.set_editor_property("open_duration", 2.8)
     gate_actor.set_editor_property("sink_distance", 450.0)
     gate_actor.set_editor_property("collision_release_alpha", 0.55)
@@ -379,6 +399,7 @@ def build_lore():
         label = f"{PREFIX}Lore_{key}"
         desired.append(label)
         actor = spawn(label, lore_class, location, folder="Story/World/ExplorationLore")
+        actor.set_editor_property("beat_id", unreal.Name(label))
         actor.set_editor_property("log_title", title)
         actor.set_editor_property("log_text", text)
         actor.set_editor_property("trigger_once", True)
@@ -409,6 +430,21 @@ def configure_story_arenas():
         "BossPlate_1_VritraArena": ("VritraPerl", ["SerpentPython"], True, "Python 봉인이 아직 살아 있어. 먼저 위쪽 폐허의 두 신호를 끝내야 해."),
         "BossPlate_4_CMDArena": ("CMDFinal", ["SerpentPython", "VritraPerl"], True, "아직 두 봉인이 모두 멎지 않았어. CMD는 지금 깨울 수 없어."),
     }
+    setup = {
+        "BossPlate_2_PythonArena": ("SerpentPython", [], False, ""),
+        "BossPlate_1_VritraArena": (
+            "VritraPerl",
+            ["SerpentPython"],
+            True,
+            "Python 봉인이 아직 살아 있어. 먼저 위쪽에서 두 신호를 끝내야 해.",
+        ),
+        "BossPlate_4_CMDArena": (
+            "CMDFinal",
+            ["SerpentPython", "VritraPerl"],
+            True,
+            "아직 두 봉인이 모두 멎지 않았어. CMD는 지금 깨울 수 없어.",
+        ),
+    }
     for label, (story_id, required, blocked, locked_line) in setup.items():
         actor = find(label)
         if not actor:
@@ -427,6 +463,50 @@ def configure_story_arenas():
         selvara.set_folder_path(unreal.Name("World/Optional/SealedSQL"))
 
 
+def configure_python_dual_boss():
+    """Keep the Python arena wired to its two authored boss identities."""
+    vethara = spawn(
+        "Python_Vethara",
+        actor_class("/Game/Blueprints/Bosses/BP_VetharaBoss.BP_VetharaBoss_C"),
+        (4300.0, 4650.0, 260.0),
+        (0.0, 180.0, 0.0),
+        "Bosses/Python",
+    )
+    aurathos = spawn(
+        "Python_Aurathos",
+        actor_class("/Game/Blueprints/Bosses/BP_AurathosBoss.BP_AurathosBoss_C"),
+        (4300.0, 5750.0, 260.0),
+        (0.0, 180.0, 0.0),
+        "Bosses/Python",
+    )
+    coordinator = spawn(
+        "Python_TeamCoordinator",
+        actor_class("/Script/Exception.BRBossTeamCoordinator"),
+        (4300.0, 5200.0, 180.0),
+        folder="Bosses/Python",
+    )
+    coordinator.set_editor_property("team_members", [vethara, aurathos])
+    coordinator.set_editor_property("allow_simultaneous_attacks", False)
+    coordinator.set_editor_property("team_attack_gap", 0.65)
+    vethara.set_editor_property("team_coordinator", coordinator)
+    aurathos.set_editor_property("team_coordinator", coordinator)
+    vethara.set_editor_property("combat_ai_enabled", False)
+    aurathos.set_editor_property("combat_ai_enabled", False)
+
+    arena = find("BossPlate_2_PythonArena")
+    if not arena:
+        raise RuntimeError("Missing Python arena trigger: BossPlate_2_PythonArena")
+    arena.set_editor_property("boss_actors", [vethara, aurathos])
+    arena.set_editor_property("boss_class_to_spawn", None)
+    arena.set_editor_property("spawn_boss_on_arena_start", False)
+    arena.set_editor_property("reset_boss_on_enter", True)
+    arena.set_editor_property("auto_include_team_members", True)
+    arena.set_editor_property("auto_include_nearby_bosses", False)
+    arena.set_editor_property("deactivate_unmanaged_bosses_on_start", True)
+    arena.set_editor_property("boss_intro_delay", 1.25)
+    arena.set_editor_property("hide_boss_status_until_intro_finished", True)
+
+
 def retire_old_generated_content():
     retired = 0
     old_labels = {"Demo_Field_EnemySpawner_A", "Demo_Field_EnemySpawner_B", "Demo_Field_EnemySpawner_C",
@@ -437,6 +517,7 @@ def retire_old_generated_content():
                 label.startswith("Demo_Field_MainPath_") or label.startswith("Demo_Field_Cover_") or
                 label.startswith("EncounterBuild_") or
                 label.startswith("Story_Hill_") or label.startswith("Story_HillRamp_")):
+            actor.modify()
             actor.set_actor_hidden_in_game(True)
             actor.set_actor_enable_collision(False)
             actor.set_actor_tick_enabled(False)
@@ -489,6 +570,7 @@ def main():
     desired.update(build_checkpoints())
     desired.update(build_lore())
     desired.update(build_map_fragments())
+    configure_python_dual_boss()
     configure_story_arenas()
     retire_old_generated_content()
     relocate_story_beats()

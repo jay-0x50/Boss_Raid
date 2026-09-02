@@ -1,5 +1,6 @@
 #include "BRStoryIntroDirector.h"
 
+#include "BRHiddenStorySubsystem.h"
 #include "BRNarrativeQueueSubsystem.h"
 #include "Story/BRNelCompanion.h"
 #include "Camera/CameraActor.h"
@@ -20,11 +21,27 @@ ABRStoryIntroDirector::ABRStoryIntroDirector()
 void ABRStoryIntroDirector::BeginPlay()
 {
 	Super::BeginPlay();
-
-	if (bPlayOnStart)
+	if (UGameInstance* GI = GetGameInstance())
 	{
-		GetWorldTimerManager().SetTimer(IntroTimer, this, &ABRStoryIntroDirector::PlayIntro, StartDelay, false);
+		if (UBRHiddenStorySubsystem* Story = GI->GetSubsystem<UBRHiddenStorySubsystem>())
+		{
+			Story->OnNarrativeBeatConsumed.AddDynamic(this, &ABRStoryIntroDirector::HandleNarrativeBeatConsumed);
+		}
 	}
+	RefreshPersistentState();
+}
+
+void ABRStoryIntroDirector::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UBRHiddenStorySubsystem* Story = GI->GetSubsystem<UBRHiddenStorySubsystem>())
+		{
+			Story->OnNarrativeBeatConsumed.RemoveDynamic(this, &ABRStoryIntroDirector::HandleNarrativeBeatConsumed);
+		}
+	}
+	GetWorldTimerManager().ClearTimer(IntroTimer);
+	Super::EndPlay(EndPlayReason);
 }
 
 void ABRStoryIntroDirector::PlayIntro()
@@ -42,6 +59,19 @@ void ABRStoryIntroDirector::PlayIntro()
 		return;
 	}
 
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UBRHiddenStorySubsystem* Story = GI->GetSubsystem<UBRHiddenStorySubsystem>())
+		{
+			if (!Story->TryConsumeNarrativeBeat(GetResolvedBeatId()))
+			{
+				bDidPlay = true;
+				return;
+			}
+		}
+	}
+
+	bIntroStarted = true;
 	bDidPlay = true;
 	ShotIndex = 0;
 	CachedPC->SetCinematicMode(true, false, true, true, true);
@@ -70,11 +100,60 @@ void ABRStoryIntroDirector::PlayIntro()
 
 void ABRStoryIntroDirector::SkipIntro()
 {
+	bIntroStarted = true;
 	if (!bDidPlay)
 	{
+		if (UGameInstance* GI = GetGameInstance())
+		{
+			if (UBRHiddenStorySubsystem* Story = GI->GetSubsystem<UBRHiddenStorySubsystem>())
+			{
+				Story->TryConsumeNarrativeBeat(GetResolvedBeatId());
+			}
+		}
 		bDidPlay = true;
 	}
 	FinishIntro();
+}
+
+FName ABRStoryIntroDirector::GetResolvedBeatId() const
+{
+	return BeatId.IsNone() ? GetFName() : BeatId;
+}
+
+void ABRStoryIntroDirector::RefreshPersistentState()
+{
+	bool bConsumed = false;
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (const UBRHiddenStorySubsystem* Story = GI->GetSubsystem<UBRHiddenStorySubsystem>())
+		{
+			bConsumed = Story->IsNarrativeBeatConsumed(GetResolvedBeatId());
+		}
+	}
+
+	if (bConsumed)
+	{
+		bDidPlay = true;
+		GetWorldTimerManager().ClearTimer(IntroTimer);
+		return;
+	}
+
+	if (!bIntroStarted)
+	{
+		bDidPlay = false;
+		if (bPlayOnStart && !GetWorldTimerManager().IsTimerActive(IntroTimer))
+		{
+			GetWorldTimerManager().SetTimer(IntroTimer, this, &ABRStoryIntroDirector::PlayIntro, StartDelay, false);
+		}
+	}
+}
+
+void ABRStoryIntroDirector::HandleNarrativeBeatConsumed(FName PersistentId)
+{
+	if (PersistentId.IsNone() || PersistentId == GetResolvedBeatId())
+	{
+		RefreshPersistentState();
+	}
 }
 
 void ABRStoryIntroDirector::ShowNextShot()

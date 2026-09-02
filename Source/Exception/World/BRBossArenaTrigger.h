@@ -26,6 +26,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
 	TObjectPtr<UBoxComponent> TriggerBox;
@@ -134,7 +135,12 @@ protected:
 	UFUNCTION()
 	void HandleBossExecutionStateChanged(AActor* Executor);
 
+	UFUNCTION()
+	void HandleMainBossProgressChanged(FName BossId, int32 DefeatedCount);
+
 	void StartArena();
+	bool RefreshClearedStateFromStory();
+	void ApplyClearedState();
 	void ActivateManagedBossesAfterIntro();
 	ABRBossBase* SpawnConfiguredBossIfNeeded();
 	FTransform GetConfiguredBossSpawnTransform() const;

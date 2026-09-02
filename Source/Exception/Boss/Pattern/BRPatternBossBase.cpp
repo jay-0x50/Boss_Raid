@@ -29,6 +29,7 @@ ABRPatternBossBase::ABRPatternBossBase()
 	CloseAttack.MinRange = 0.0f;
 	CloseAttack.MaxRange = 280.0f;
 	CloseAttack.Damage = 20.0f;
+	CloseAttack.bCanBeParried = true;
 	CloseAttack.Windup = 0.65f;
 	CloseAttack.Cooldown = 1.8f;
 	CloseAttack.Radius = 90.0f;
@@ -58,6 +59,7 @@ ABRPatternBossBase::ABRPatternBossBase()
 	LongAttack.MinRange = 220.0f;
 	LongAttack.MaxRange = 520.0f;
 	LongAttack.Damage = 16.0f;
+	LongAttack.bCanBeParried = true;
 	LongAttack.Windup = 0.85f;
 	LongAttack.Cooldown = 2.4f;
 	LongAttack.Radius = 70.0f;

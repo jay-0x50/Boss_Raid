@@ -117,6 +117,7 @@ void ABRCMDBoss::ConfigureCMDPatterns()
 	DirSweep.MinRange = 0.0f;
 	DirSweep.MaxRange = 620.0f;
 	DirSweep.Damage = 34.0f;
+	DirSweep.bCanBeParried = true;
 	DirSweep.Windup = 0.75f;
 	DirSweep.ImpactHoldTime = 0.16f;
 	DirSweep.RecoveryTime = 0.38f;

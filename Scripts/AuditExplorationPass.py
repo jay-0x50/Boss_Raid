@@ -56,6 +56,16 @@ def main():
     if actual != expected:
         fail(f"Managed actor groups differ: actual={actual}, expected={expected}")
 
+    lore_ids = []
+    for actor in lore:
+        expected_id = actor.get_actor_label()
+        actual_id = str(actor.get_editor_property("beat_id"))
+        if actual_id != expected_id:
+            fail(f"Exploration lore has unstable beat id: {expected_id} -> {actual_id}")
+        lore_ids.append(actual_id)
+    if len(lore_ids) != len(set(lore_ids)):
+        fail(f"Exploration lore beat ids are duplicated: {lore_ids}")
+
     route_counts = {route: sum(a.get_actor_label().startswith(f"Explore_Path_{route}_") for a in paths)
                     for route in ("Field1", "Field2", "Field3")}
     if route_counts != {"Field1": 15, "Field2": 26, "Field3": 18}:
@@ -101,6 +111,26 @@ def main():
         if label != "BossPlate_4_CMDArena" and actor.get_editor_property("gate_actor_to_hide_on_defeat"):
             fail(f"{label} still has an instant-hide legacy gate")
 
+    python_arena = by_label["BossPlate_2_PythonArena"]
+    vethara = by_label.get("Python_Vethara")
+    aurathos = by_label.get("Python_Aurathos")
+    coordinator = by_label.get("Python_TeamCoordinator")
+    if not vethara or vethara.get_class().get_name() != "BP_VetharaBoss_C":
+        fail("Python arena is missing the authored Vethara boss instance")
+    if not aurathos or aurathos.get_class().get_name() != "BP_AurathosBoss_C":
+        fail("Python arena is missing the authored Aurathos boss instance")
+    if not coordinator or coordinator.get_class().get_name() != "BRBossTeamCoordinator":
+        fail("Python arena is missing its team coordinator")
+    team_members = list(coordinator.get_editor_property("team_members"))
+    managed_bosses = list(python_arena.get_editor_property("boss_actors"))
+    if team_members != [vethara, aurathos] or managed_bosses != [vethara, aurathos]:
+        fail("Python bosses are not wired in stable Vethara/Aurathos order")
+    if python_arena.get_editor_property("boss_class_to_spawn") or bool(
+            python_arena.get_editor_property("spawn_boss_on_arena_start")):
+        fail("Python arena still has the legacy single-boss spawn path enabled")
+    if bool(coordinator.get_editor_property("allow_simultaneous_attacks")):
+        fail("Python team coordinator allows simultaneous committed attacks")
+
     gate_setup = {
         "Explore_StoryGate_Python": "SerpentPython",
         "Explore_StoryGate_Vritra": "VritraPerl",
@@ -114,6 +144,10 @@ def main():
             fail(f"{label} is missing gate pieces or reveal camera")
         if any(not piece.get_actor_enable_collision() for piece in pieces):
             fail(f"{label} has a non-blocking closed gate piece")
+        for piece in pieces:
+            component = piece.get_component_by_class(unreal.StaticMeshComponent)
+            if not component or component.get_editor_property("mobility") != unreal.ComponentMobility.MOVABLE:
+                fail(f"{label} has a gate piece that cannot animate without PIE mobility warnings")
         if actor.get_editor_property("reveal_camera").get_actor_location().z < 1200.0:
             fail(f"{label} reveal camera is low enough to clip arena rocks")
         timing = (float(actor.get_editor_property("open_duration")),
@@ -210,10 +244,20 @@ def main():
         fail("Story, ending, or world-map runtime class is unavailable")
     save_cdo = unreal.get_default_object(save_game_class)
     controller_cdo = unreal.get_default_object(player_controller_class)
-    if int(save_cdo.get_editor_property("save_version")) != 3:
-        fail("Save-game version was not advanced for map discovery data")
+    map_widget_cdo = unreal.get_default_object(map_widget_class)
+    if int(save_cdo.get_editor_property("save_version")) != 4:
+        fail("Save-game version was not advanced for map discovery and one-shot story data")
     if controller_cdo.get_editor_property("world_map_widget_class") != map_widget_class:
         fail("Player controller is not configured to create the world-map widget")
+    mini_size = map_widget_cdo.get_editor_property("mini_map_frame_size")
+    full_size = map_widget_cdo.get_editor_property("full_map_frame_size")
+    world_span = map_widget_cdo.get_editor_property("mini_map_world_span")
+    if (mini_size.x, mini_size.y) != (340.0, 260.0):
+        fail(f"Unexpected top-right minimap size: {mini_size}")
+    if (full_size.x, full_size.y) != (1180.0, 740.0):
+        fail(f"Unexpected full-map size: {full_size}")
+    if world_span.x < 4500.0 or world_span.y < 3500.0:
+        fail(f"Minimap world span is too narrow for route reading: {world_span}")
     gameplay_controller_cdo = unreal.get_default_object(gameplay_controller_class)
     if gameplay_controller_cdo.get_editor_property("world_map_widget_class") != map_widget_class:
         fail("Gameplay controller Blueprint did not inherit the world-map widget class")

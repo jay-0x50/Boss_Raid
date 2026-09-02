@@ -20,13 +20,26 @@ def log(message):
     unreal.log(f"[BuildStoryPrologue] {message}")
 
 
+def make_rotator(pitch=0.0, yaw=0.0, roll=0.0):
+    """Build a Rotator by field so call sites consistently use pitch/yaw/roll."""
+    rotation = unreal.Rotator()
+    rotation.pitch = float(pitch)
+    rotation.yaw = float(yaw)
+    rotation.roll = float(roll)
+    return rotation
+
+
+def make_color(red, green, blue, alpha=255):
+    return unreal.Color(b=int(blue), g=int(green), r=int(red), a=int(alpha))
+
+
 def load_map():
     if not unreal.EditorLoadingAndSavingUtils.load_map(MAP_PATH):
         raise RuntimeError(f"Failed to load map: {MAP_PATH}")
 
 
 def all_actors():
-    return unreal.EditorLevelLibrary.get_all_level_actors()
+    return list(unreal.get_editor_subsystem(unreal.EditorActorSubsystem).get_all_level_actors())
 
 
 def find_actor(label):
@@ -61,20 +74,32 @@ def get_component(actor, component_class):
 
 def spawn_or_update(label, actor_class, location, rotation=None, folder=FOLDER):
     actor = find_actor(label)
-    if actor and not actor.is_a(actor_class):
-        unreal.EditorLevelLibrary.destroy_actor(actor)
+    actor_subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+    target_rotation = rotation if rotation is not None else make_rotator()
+    if actor and actor.get_class() != actor_class:
+        actor_subsystem.destroy_actor(actor)
         actor = None
     if not actor:
-        actor = unreal.EditorLevelLibrary.spawn_actor_from_class(
+        actor = actor_subsystem.spawn_actor_from_class(
             actor_class,
             location,
-            rotation or unreal.Rotator(0.0, 0.0, 0.0),
+            target_rotation,
         )
         if not actor:
             raise RuntimeError(f"Failed to spawn {label}")
         actor.set_actor_label(label)
+    actor.modify()
     actor.set_actor_location(location, False, False)
-    actor.set_actor_rotation(rotation or unreal.Rotator(0.0, 0.0, 0.0), False)
+    actor.set_actor_rotation(target_rotation, False)
+    actual_rotation = actor.get_actor_rotation()
+    if (
+        abs(actual_rotation.pitch - target_rotation.pitch) > 0.05
+        or abs(actual_rotation.yaw - target_rotation.yaw) > 0.05
+        or abs(actual_rotation.roll - target_rotation.roll) > 0.05
+    ):
+        raise RuntimeError(
+            f"Rotation mismatch on {label}: requested={target_rotation}, actual={actual_rotation}"
+        )
     actor.set_folder_path(unreal.Name(folder))
     return actor
 
@@ -85,7 +110,7 @@ def make_mesh(label, location, scale, rotation=(0.0, 0.0, 0.0), mesh_path=ROCK_M
         label,
         unreal.StaticMeshActor.static_class(),
         unreal.Vector(*location),
-        unreal.Rotator(*rotation),
+        make_rotator(pitch=rotation[0], yaw=rotation[1], roll=rotation[2]),
         folder,
     )
     mesh = unreal.load_asset(mesh_path)
@@ -211,7 +236,7 @@ def look_rotation(camera_location, target_location):
     dz = target_location[2] - camera_location[2]
     yaw = math.degrees(math.atan2(dy, dx))
     pitch = math.degrees(math.atan2(dz, math.sqrt(dx * dx + dy * dy)))
-    return unreal.Rotator(pitch, yaw, 0.0)
+    return make_rotator(pitch=pitch, yaw=yaw)
 
 
 def build_cameras_and_intro():
@@ -246,6 +271,7 @@ def build_cameras_and_intro():
     set_prop(director, "shot_cameras", cameras, required=True)
     set_prop(director, "shot_times", [2.6, 2.8, 2.7], required=True)
     set_prop(director, "start_delay", 0.5, required=True)
+    set_prop(director, "beat_id", unreal.Name("Story_Intro_Awakening"), required=True)
     set_prop(director, "bPlayOnStart", True, required=True)
     set_prop(
         director,
@@ -259,12 +285,20 @@ def build_cameras_and_intro():
         "깨어났네. 네가 누군지는 나중에 알게 될 거야. 지금은 저 빛을 따라 밖으로 나가.",
         required=True,
     )
+    # Keep the authored Korean line explicit even when this file has passed
+    # through a Windows console with a legacy code page.
+    set_prop(
+        director,
+        "opening_nel_line",
+        "깨어났네. 네가 왜 여기 있는지는 나중에 말해 줄게. 지금은 저 빛을 따라 밖으로 나가.",
+        required=True,
+    )
 
 
 def build_lights():
     light_specs = [
-        ("Wake", (1000.0, 0.0, 360.0), unreal.Color(25, 150, 255, 255), 4200.0, 780.0),
-        ("Exit", (1940.0, 0.0, 420.0), unreal.Color(255, 190, 115, 255), 5600.0, 900.0),
+        ("Wake", (1000.0, 0.0, 360.0), make_color(25, 150, 255), 1500.0, 780.0),
+        ("Exit", (1940.0, 0.0, 420.0), make_color(255, 190, 115), 1800.0, 900.0),
     ]
     for name, location, color, intensity, radius in light_specs:
         light = spawn_or_update(
@@ -278,7 +312,22 @@ def build_lights():
             set_prop(component, "intensity", intensity)
             set_prop(component, "attenuation_radius", radius)
             set_prop(component, "light_color", color)
-            set_prop(component, "cast_shadows", True)
+        set_prop(component, "cast_shadows", True)
+
+
+def tune_post_process():
+    post_process = find_actor("Demo_SecondPass_PostProcess")
+    if not post_process:
+        log("Post-process volume was not found; skipped tone tuning.")
+        return
+
+    settings = post_process.get_editor_property("settings")
+    # The imported emissive props are intentionally vivid. Pull exposure and
+    # bloom back so blue/gold accents retain detail instead of clipping white.
+    set_prop(settings, "auto_exposure_bias", -2.2, required=True)
+    set_prop(settings, "bloom_intensity", 0.08, required=True)
+    set_prop(settings, "vignette_intensity", 0.36, required=True)
+    post_process.set_editor_property("settings", settings)
 
 
 def make_lore(label, location, title, text, show_time=4.2):
@@ -286,6 +335,7 @@ def make_lore(label, location, title, text, show_time=4.2):
     if not actor_class:
         raise RuntimeError("BRLoreLogTrigger class was not found. Build ExceptionEditor first.")
     actor = spawn_or_update(label, actor_class, unreal.Vector(*location), folder="Story/World/Lore")
+    set_prop(actor, "beat_id", unreal.Name(label), required=True)
     set_prop(actor, "log_title", title, required=True)
     set_prop(actor, "log_text", text, required=True)
     set_prop(actor, "show_time", show_time, required=True)
@@ -298,6 +348,7 @@ def make_nel(label, location, line, request_id="None", completes=False, hidden_h
     if not actor_class:
         raise RuntimeError("BRNelRequestTrigger class was not found. Build ExceptionEditor first.")
     actor = spawn_or_update(label, actor_class, unreal.Vector(*location), folder="Story/World/Nel")
+    set_prop(actor, "beat_id", unreal.Name(label), required=True)
     set_prop(actor, "display_line", line, required=True)
     set_prop(actor, "request_id", unreal.Name(request_id), required=True)
     set_prop(actor, "bCompletesRequest", completes, required=True)
@@ -321,12 +372,12 @@ def build_story_beats():
     )
     make_nel(
         f"{PREFIX}Nel_FirstRest",
-        (2500.0, -120.0, 150.0),
+        (2140.0, 400.0, 150.0),
         "이 구간은 아직 안정적이네. 저 불빛을 기억해 둬. 다시 일어날 자리가 될 거야.",
     )
     make_lore(
         f"{PREFIX}Lore_MemoryLeak",
-        (3380.0, -300.0, 150.0),
+        (2910.0, 1880.0, 150.0),
         "RUNTIME // LEAK REPORT",
         "> PROCESS LEAK DETECTED\n> MEMORY LEAK: FieldMonster_01\n> OWNER: UNKNOWN",
     )
@@ -369,6 +420,16 @@ def build_story_beats():
         5.0,
     )
 
+    clean_nel_lines = {
+        f"{PREFIX}Nel_CaveExit": "밖은 아직 불안정해. 먼저 가까운 체크포인트를 복구하자.",
+        f"{PREFIX}Nel_FirstRest": "이곳에 닿아 두면 죽어도 여기서 다시 깨어날 수 있어.",
+        f"{PREFIX}Nel_PythonTrace": "붕괴 흔적에서 두 개의 신호가 겹쳐 보여. Python 봉인을 지키는 쌍둥이야.",
+        f"{PREFIX}Nel_PerlSigil": "모래 아래 반복되는 문양이 보여. Vritra가 같은 길을 수없이 걸었던 흔적이야.",
+        f"{PREFIX}Nel_RuntimeShard": "CMD 쪽으로 갈수록 오래된 명령이 들려. 붕괴된 Runtime 조각을 확인해 봐.",
+    }
+    for label, line in clean_nel_lines.items():
+        set_prop(find_actor(label), "display_line", line, required=True)
+
 
 def build_hidden_fragments():
     fragment_class = unreal.load_class(None, "/Script/Exception.BRHiddenFragmentPickup")
@@ -379,6 +440,7 @@ def build_hidden_fragments():
         (2650.0, -4050.0, 175.0),
         (10800.0, -880.0, 185.0),
     ]
+    fragment_ids = ("HiddenFragment_Field1", "HiddenFragment_Field2", "HiddenFragment_Field3")
     for index, location in enumerate(locations):
         fragment = spawn_or_update(
             f"{PREFIX}HiddenFragment_{index + 1}",
@@ -386,13 +448,14 @@ def build_hidden_fragments():
             unreal.Vector(*location),
             folder="Story/World/HiddenRoute",
         )
+        set_prop(fragment, "fragment_id", unreal.Name(fragment_ids[index]), required=True)
         set_prop(fragment, "fragment_amount", 1)
         set_prop(fragment, "bDestroyOnPickup", True)
 
     altar = find_actor("Demo_Field_HiddenWeaponAltar")
     if altar:
         altar.set_actor_location(unreal.Vector(11950.0, -720.0, 155.0), False, False)
-        altar.set_actor_rotation(unreal.Rotator(0.0, 18.0, 0.0), False)
+        altar.set_actor_rotation(make_rotator(yaw=18.0), False)
         altar.set_folder_path(unreal.Name("Story/World/HiddenRoute"))
         log("Moved the existing hidden weapon altar to the CMD approach.")
 
@@ -415,6 +478,23 @@ def set_boss_story():
             "> PROCESS: CMD — TERMINATED\n> EXCEPTION: Unhandled — Hendel\n> THE RUNTIME WILL REMEMBER THIS.",
         ),
     }
+    story = {
+        "BossPlate_1_VritraArena": (
+            "VRITRA // PERL NOMAD",
+            "끝없이 반복된 스크립트의 유목민.",
+            "두 번째 봉인이 멎었다. 최초의 명령으로 내려가는 길이 열린다.",
+        ),
+        "BossPlate_2_PythonArena": (
+            "SERPENT.PY // TWIN EXCEPTIONS",
+            "한 봉인에서 갈라져 나온 두 개의 예외.",
+            "Python 봉인이 끝났다. 아래쪽 Perl 레이어가 복구된다.",
+        ),
+        "BossPlate_4_CMDArena": (
+            "CMD // THE FIRST COMMAND",
+            "모든 명령이 시작된 곳.",
+            "> PROCESS: CMD // TERMINATED\n> EXCEPTION: Unhandled // Hendel\n> THE RUNTIME WILL REMEMBER THIS.",
+        ),
+    }
     for label, (title, intro, defeat) in story.items():
         actor = find_actor(label)
         if not actor:
@@ -435,7 +515,7 @@ def set_player_start():
             folder="Story/Prologue/Logic",
         )
     player_start.set_actor_location(unreal.Vector(1200.0, 0.0, 150.0), False, False)
-    player_start.set_actor_rotation(unreal.Rotator(0.0, 0.0, 0.0), False)
+    player_start.set_actor_rotation(make_rotator(), False)
 
 
 def main():
@@ -444,6 +524,7 @@ def main():
     build_spawn_cave()
     build_rolling_terrain()
     build_lights()
+    tune_post_process()
     build_cameras_and_intro()
     build_story_beats()
     build_hidden_fragments()

@@ -75,9 +75,55 @@ ARENAS = {
     },
 }
 
+PYTHON_CENTER = ARENAS["Python"]["center"]
+PYTHON_ENTRANCE = (1820.0, 5200.0)
+PYTHON_EXIT = (6460.0, 5200.0)
+PYTHON_PLAYER_STAGING = (2700.0, 5200.0)
+PYTHON_BOSS_ANCHORS = {
+    "Vethara": (4300.0, 4650.0),
+    "Aurathos": (4300.0, 5750.0),
+}
+PYTHON_ROUTE_HALF_WIDTH = 700.0
+PYTHON_BOSS_CLEARANCE = 1050.0
+PYTHON_PLAYER_CLEARANCE = 800.0
+PYTHON_REQUIRED_LABELS = {
+    f"{PREFIX}Python_Entry_VetharaPier",
+    f"{PREFIX}Python_Entry_AurathosPier",
+    f"{PREFIX}Python_Exit_VetharaPier",
+    f"{PREFIX}Python_Exit_AurathosPier",
+    f"{PREFIX}Python_Vethara_KeepFragment",
+    f"{PREFIX}Python_Vethara_BackArch",
+    f"{PREFIX}Python_Vethara_KeyLight",
+    f"{PREFIX}Python_Aurathos_KeepFragment",
+    f"{PREFIX}Python_Aurathos_BackArch",
+    f"{PREFIX}Python_Aurathos_KeyLight",
+}
+PYTHON_REQUIRED_LABELS.update(
+    f"{PREFIX}Python_{side}_OuterBoulder_{index:02d}"
+    for side in ("Vethara", "Aurathos")
+    for index in range(4)
+)
+PYTHON_REQUIRED_LABELS.update(
+    f"{PREFIX}Python_{side}_BrokenWall_{index:02d}"
+    for side in ("Vethara", "Aurathos")
+    for index in range(3)
+)
+
 
 def log(message):
     unreal.log(f"[BuildBossEnvironmentUpgrade] {message}")
+
+
+def make_rotator(pitch=0.0, yaw=0.0, roll=0.0):
+    rotation = unreal.Rotator()
+    rotation.pitch = float(pitch)
+    rotation.yaw = float(yaw)
+    rotation.roll = float(roll)
+    return rotation
+
+
+def make_color(red, green, blue, alpha=255):
+    return unreal.Color(b=int(blue), g=int(green), r=int(red), a=int(alpha))
 
 
 def load_assets(paths, expected_type):
@@ -135,6 +181,19 @@ def radial(center, radius, angle_degrees, z):
     )
 
 
+def elliptical(center, radius_x, radius_y, angle_degrees, z):
+    angle = math.radians(angle_degrees)
+    return (
+        center[0] + math.cos(angle) * radius_x,
+        center[1] + math.sin(angle) * radius_y,
+        z,
+    )
+
+
+def distance_2d(location, anchor):
+    return math.hypot(location[0] - anchor[0], location[1] - anchor[1])
+
+
 def add_common_arena(specs, arena, data):
     cx, cy, cz = data["center"]
 
@@ -188,6 +247,173 @@ def add_common_arena(specs, arena, data):
     )
 
 
+def add_python_dual_arena(specs, data):
+    """Dress the Python room as an open, asymmetric twin-boss ruin.
+
+    The west/east route remains a wide clear lane. Vethara owns the lower,
+    cobalt-lit ruin and Aurathos the upper, gold-lit ruin; all collision stays
+    on the oval perimeter and outside the authored boss spawn clearances.
+    """
+    cx, cy, cz = data["center"]
+
+    perimeter = (
+        ("Vethara_OuterBoulder_00", -118.0, 2200.0, 2100.0, (5.2, 5.8, 5.6), (-8.0, -34.0, 4.0)),
+        ("Vethara_OuterBoulder_01", -91.0, 2260.0, 2000.0, (6.0, 5.1, 6.4), (6.0, -12.0, -5.0)),
+        ("Vethara_OuterBoulder_02", -66.0, 2180.0, 2000.0, (5.5, 6.2, 5.8), (-4.0, 19.0, 7.0)),
+        ("Vethara_OuterBoulder_03", -40.0, 2240.0, 2000.0, (6.1, 5.4, 6.2), (5.0, 48.0, -6.0)),
+        ("Aurathos_OuterBoulder_00", 38.0, 2200.0, 2100.0, (5.8, 5.0, 6.5), (-6.0, 123.0, 5.0)),
+        ("Aurathos_OuterBoulder_01", 68.0, 2250.0, 2050.0, (6.4, 5.6, 5.9), (4.0, 151.0, -7.0)),
+        ("Aurathos_OuterBoulder_02", 94.0, 2190.0, 2000.0, (5.4, 6.3, 6.7), (-3.0, 188.0, 6.0)),
+        ("Aurathos_OuterBoulder_03", 118.0, 2270.0, 2100.0, (6.2, 5.5, 6.1), (7.0, 222.0, -4.0)),
+    )
+    for label, angle, radius_x, radius_y, scale, rotation in perimeter:
+        specs.append(
+            make_mesh_spec(
+                label,
+                "Python",
+                "boulder",
+                elliptical((cx, cy), radius_x, radius_y, angle, cz - 8.0),
+                scale,
+                rotation,
+                collision=True,
+                material="boulder",
+                folder="TwinRuins/Perimeter",
+            )
+        )
+
+    # Uneven wall remnants complete the oval without reconstructing a box.
+    boundary_ruins = (
+        ("Vethara_BrokenWall_00", "wall_half", -122.0, 2050.0, 1850.0, (1.35, 0.82, 1.18), -29.0),
+        ("Vethara_BrokenWall_01", "wall_detail", -88.0, 2040.0, 1850.0, (1.10, 0.78, 1.42), 7.0),
+        ("Vethara_BrokenWall_02", "wall", -54.0, 2050.0, 1850.0, (1.48, 0.86, 1.05), 31.0),
+        ("Aurathos_BrokenWall_00", "wall", 45.0, 2080.0, 1850.0, (1.22, 0.92, 1.38), 139.0),
+        ("Aurathos_BrokenWall_01", "wall_half", 83.0, 2070.0, 1900.0, (1.62, 0.88, 1.16), 176.0),
+        ("Aurathos_BrokenWall_02", "wall_detail", 126.0, 2050.0, 1850.0, (1.05, 0.84, 1.55), 218.0),
+    )
+    for label, mesh_name, angle, radius_x, radius_y, scale, yaw in boundary_ruins:
+        specs.append(
+            make_mesh_spec(
+                label,
+                "Python",
+                mesh_name,
+                elliptical((cx, cy), radius_x, radius_y, angle, cz),
+                scale,
+                (0.0, yaw, 0.0),
+                collision=True,
+                material="stone",
+                folder="TwinRuins/Boundary",
+            )
+        )
+
+    # Four small ruined piers frame, but do not narrow, the existing openings.
+    # Their uneven offsets avoid a prototype symmetry and leave the entrance
+    # trigger's full 1040 x 1800 cm collision volume unobstructed.
+    piers = (
+        ("Entry_VetharaPier", (2050.0, cy - 1320.0, cz), (0.48, 0.48, 0.82), 12.0),
+        ("Entry_AurathosPier", (2090.0, cy + 1360.0, cz), (0.44, 0.44, 0.94), -17.0),
+        ("Exit_VetharaPier", (6200.0, cy - 1060.0, cz), (0.46, 0.46, 0.88), -14.0),
+        ("Exit_AurathosPier", (6230.0, cy + 1100.0, cz), (0.50, 0.50, 0.78), 19.0),
+    )
+    for label, location, scale, yaw in piers:
+        specs.append(
+            make_mesh_spec(
+                label,
+                "Python",
+                "room_corner",
+                location,
+                scale,
+                (0.0, yaw, 0.0),
+                collision=True,
+                material="stone",
+                folder="TwinRuins/Thresholds",
+            )
+        )
+
+    # The fort scan is retained only as two dark, non-colliding background
+    # fragments. This removes the bright shell that previously filled the
+    # combat center while preserving a strong ruined skyline.
+    identity_ruins = (
+        ("Vethara_KeepFragment", "fort", (cx + 500.0, cy - 2100.0, cz - 30.0),
+         (0.24, 0.15, 0.36), (0.0, 18.0, 0.0), "fort_wall"),
+        ("Vethara_BackArch", "gate", (cx - 230.0, cy - 1740.0, cz + 180.0),
+         (1.45, 1.45, 1.55), (0.0, 3.0, 0.0), "fort_trim"),
+        ("Aurathos_KeepFragment", "fort", (cx - 550.0, cy + 2150.0, cz - 20.0),
+         (0.18, 0.24, 0.30), (0.0, -23.0, 0.0), "fort_wall"),
+        ("Aurathos_BackArch", "gate", (cx + 280.0, cy + 1760.0, cz + 190.0),
+         (1.65, 1.65, 1.72), (0.0, -6.0, 0.0), "fort_trim"),
+    )
+    for label, mesh_name, location, scale, rotation, material in identity_ruins:
+        specs.append(
+            make_mesh_spec(
+                label,
+                "Python",
+                mesh_name,
+                location,
+                scale,
+                rotation,
+                collision=False,
+                material=material,
+                folder="TwinRuins/Identity",
+            )
+        )
+
+    specs.extend(
+        [
+            make_light_spec("Vethara_KeyLight", "Python", (cx - 360.0, cy - 1240.0, cz + 470.0),
+                            (0.0, 0.40, 1.0), 520.0, 1750.0),
+            make_light_spec("Aurathos_KeyLight", "Python", (cx + 330.0, cy + 1270.0, cz + 490.0),
+                            (1.0, 0.55, 0.0), 500.0, 1720.0),
+        ]
+    )
+
+
+def validate_python_specs(specs):
+    python_specs = [spec for spec in specs if spec["arena"] == "Python"]
+    labels = {spec["label"] for spec in python_specs}
+    missing = sorted(PYTHON_REQUIRED_LABELS - labels)
+    if missing:
+        raise RuntimeError(f"Python arena specification is missing required labels: {missing}")
+    unexpected = sorted(labels - PYTHON_REQUIRED_LABELS)
+    if unexpected:
+        raise RuntimeError(f"Python arena specification has unmanaged labels: {unexpected}")
+
+    by_label = {spec["label"]: spec for spec in python_specs}
+    thresholds = (
+        ("entrance", PYTHON_ENTRANCE, "Entry_VetharaPier", "Entry_AurathosPier"),
+        ("exit", PYTHON_EXIT, "Exit_VetharaPier", "Exit_AurathosPier"),
+    )
+    for name, anchor, south_suffix, north_suffix in thresholds:
+        south = by_label[f"{PREFIX}Python_{south_suffix}"]["location"]
+        north = by_label[f"{PREFIX}Python_{north_suffix}"]["location"]
+        if abs(((south[1] + north[1]) * 0.5) - anchor[1]) > 50.0:
+            raise RuntimeError(f"Python {name} piers are not centered on the preserved route")
+        if north[1] - south[1] < 2000.0:
+            raise RuntimeError(f"Python {name} pier centers leave too little opening width")
+
+    colliding = [spec for spec in python_specs if spec["kind"] == "mesh" and spec["collision"]]
+    route_blockers = [
+        spec["label"] for spec in colliding
+        if abs(spec["location"][1] - PYTHON_CENTER[1]) < PYTHON_ROUTE_HALF_WIDTH
+    ]
+    if route_blockers:
+        raise RuntimeError(f"Python entrance-to-exit route is blocked by: {route_blockers}")
+
+    for boss_name, anchor in PYTHON_BOSS_ANCHORS.items():
+        blockers = [
+            spec["label"] for spec in colliding
+            if distance_2d(spec["location"], anchor) < PYTHON_BOSS_CLEARANCE
+        ]
+        if blockers:
+            raise RuntimeError(f"{boss_name} spawn clearance is blocked by: {blockers}")
+
+    player_blockers = [
+        spec["label"] for spec in colliding
+        if distance_2d(spec["location"], PYTHON_PLAYER_STAGING) < PYTHON_PLAYER_CLEARANCE
+    ]
+    if player_blockers:
+        raise RuntimeError(f"Python player staging clearance is blocked by: {player_blockers}")
+
+
 def add_cmd_keep(specs, data):
     cx, cy, cz = data["center"]
     specs.append(
@@ -214,12 +440,16 @@ def add_cmd_keep(specs, data):
 def build_specs():
     specs = []
     for arena, data in ARENAS.items():
-        add_common_arena(specs, arena, data)
+        if arena == "Python":
+            add_python_dual_arena(specs, data)
+        else:
+            add_common_arena(specs, arena, data)
     add_cmd_keep(specs, ARENAS["CMD"])
 
     labels = [spec["label"] for spec in specs]
     if len(labels) != len(set(labels)):
         raise RuntimeError("Duplicate desired actor labels.")
+    validate_python_specs(specs)
     return specs
 
 
@@ -231,11 +461,12 @@ def mesh_component(actor):
 
 
 def configure_mesh_actor(actor, spec, meshes, materials):
+    actor.modify()
     actor.set_actor_label(spec["label"])
     actor.set_folder_path(unreal.Name(f"{FOLDER_ROOT}/{spec['arena']}/{spec['folder']}"))
     actor.set_actor_location(unreal.Vector(*spec["location"]), False, False)
     pitch, yaw, roll = spec["rotation"]
-    actor.set_actor_rotation(unreal.Rotator(roll=roll, pitch=pitch, yaw=yaw), False)
+    actor.set_actor_rotation(make_rotator(pitch=pitch, yaw=yaw, roll=roll), False)
     actor.set_actor_scale3d(unreal.Vector(*spec["scale"]))
 
     component = mesh_component(actor)
@@ -259,6 +490,7 @@ def configure_mesh_actor(actor, spec, meshes, materials):
 
 
 def configure_light_actor(actor, spec):
+    actor.modify()
     actor.set_actor_label(spec["label"])
     actor.set_folder_path(unreal.Name(f"{FOLDER_ROOT}/{spec['arena']}/{spec['folder']}"))
     actor.set_actor_location(unreal.Vector(*spec["location"]), False, False)
@@ -269,8 +501,8 @@ def configure_light_actor(actor, spec):
     component.set_mobility(unreal.ComponentMobility.STATIONARY)
     component.set_editor_property("intensity", spec["intensity"])
     component.set_editor_property("attenuation_radius", spec["radius"])
-    component.set_editor_property("light_color", unreal.Color(
-        int(spec["color"][0] * 255.0), int(spec["color"][1] * 255.0), int(spec["color"][2] * 255.0), 255
+    component.set_editor_property("light_color", make_color(
+        spec["color"][0] * 255.0, spec["color"][1] * 255.0, spec["color"][2] * 255.0
     ))
     component.set_editor_property("cast_shadows", True)
 
@@ -292,7 +524,8 @@ def reconcile_specs(actor_subsystem, target_level, specs, meshes, materials):
                 actor = None
             if not actor:
                 actor = actor_subsystem.spawn_actor_from_class(
-                    expected_class.static_class(), unreal.Vector(*spec["location"]), unreal.Rotator()
+                    expected_class.static_class(), unreal.Vector(*spec["location"]),
+                    make_rotator()
                 )
                 if not actor:
                     raise RuntimeError(f"Could not spawn {spec['label']}")
@@ -329,15 +562,27 @@ def replace_exit_gates(actors, meshes, materials):
             continue
         cx, cy, cz = data["center"]
         gate.set_actor_location(unreal.Vector(cx + 2160.0, cy, cz), False, False)
-        gate.set_actor_rotation(unreal.Rotator(roll=0.0, pitch=0.0, yaw=90.0), False)
+        gate.set_actor_rotation(make_rotator(yaw=90.0), False)
         gate.set_actor_scale3d(unreal.Vector(3.15, 3.15, 3.15))
         component = mesh_component(gate)
         component.set_static_mesh(meshes["gate_bars"])
         for index in range(max(1, component.get_num_materials())):
             component.set_material(index, materials["stone"])
-        component.set_collision_profile_name(BLOCK_ALL)
-        component.set_collision_enabled(unreal.CollisionEnabled.QUERY_AND_PHYSICS)
-        gate.set_actor_enable_collision(True)
+        story_gate = next(
+            (actor for actor in actors if actor.get_actor_label() == f"Explore_StoryGate_{arena}"),
+            None,
+        )
+        if story_gate:
+            # BuildExplorationWorld owns the replacement progression gate. Keep
+            # its retired legacy mesh non-blocking on every rerun so it cannot
+            # become an invisible wall when this dressing pass runs last.
+            component.set_collision_profile_name(NO_COLLISION)
+            component.set_collision_enabled(unreal.CollisionEnabled.NO_COLLISION)
+            gate.set_actor_enable_collision(False)
+        else:
+            component.set_collision_profile_name(BLOCK_ALL)
+            component.set_collision_enabled(unreal.CollisionEnabled.QUERY_AND_PHYSICS)
+            gate.set_actor_enable_collision(True)
         changed += 1
     return changed
 
@@ -362,11 +607,11 @@ def tune_field_lighting(actors):
     for actor in actors:
         if isinstance(actor, unreal.DirectionalLight):
             component = actor.get_component_by_class(unreal.DirectionalLightComponent)
-            component.set_editor_property("intensity", 1.6)
+            component.set_editor_property("intensity", 1.15)
             changed += 1
         elif isinstance(actor, unreal.SkyLight):
             component = actor.get_component_by_class(unreal.SkyLightComponent)
-            component.set_editor_property("intensity", 0.8)
+            component.set_editor_property("intensity", 0.55)
             changed += 1
     return changed
 

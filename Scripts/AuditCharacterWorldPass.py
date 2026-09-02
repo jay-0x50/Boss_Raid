@@ -10,6 +10,10 @@ EXPECTED_SPAWNER_LOCATIONS = {
     "C": (5350.0, 495.0, 120.0),
     "D": (9000.0, -495.0, 120.0),
 }
+EXPECTED_NEL_LOCATIONS = {
+    "Story_NelCompanion_CaveExit": (1940.0, 420.0, 95.0),
+    "Story_NelCompanion_FirstRest": (2280.0, 560.0, 95.0),
+}
 
 
 def fail(message):
@@ -56,6 +60,14 @@ def main():
         fail(f"Expected 6 Nel appearances, found {len(nel)}")
     if len(buildings) != 28:
         fail(f"Expected 28 encounter building actors, found {len(buildings)}")
+
+    for label, expected in EXPECTED_NEL_LOCATIONS.items():
+        companion = by_label.get(label)
+        if not companion:
+            fail(f"Missing Nel appearance: {label}")
+        actual = companion.get_actor_location()
+        if math.dist((actual.x, actual.y, actual.z), expected) > 2.0:
+            fail(f"Nel appearance is off its story beat: {label} at {actual}")
 
     for label in SPAWNER_LABELS:
         spawner = by_label.get(label)

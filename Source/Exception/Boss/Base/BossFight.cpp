@@ -1,6 +1,7 @@
 #include "Boss/Base/BRBossBase.h"
 
 #include "Boss/AI/BRBossAIController.h"
+#include "Boss/Team/BRBossTeamCoordinator.h"
 #include "BRStatComponent.h"
 #include "Engine/Engine.h"
 #include "Player/Character/ExceptionCharacter.h"
@@ -29,6 +30,10 @@ bool ABRBossBase::ReceiveCombatHit_Implementation(float Damage, float GroggyDama
 	StartProceduralHitReaction(DamageCauser);
 	PlayCameraFeedbackForActor(DamageCauser, BossReceivedHitCameraShakeScale, BossReceivedHitRumbleIntensity);
 	RefreshPhaseByHP();
+	if (TeamCoordinator)
+	{
+		TeamCoordinator->NotifyMemberHealthChanged(this);
+	}
 
 	UE_LOG(LogTemp, Log, TEXT("%s hit: Damage=%.1f, GroggyDamage=%.1f, HP=%.1f/%.1f, Groggy=%.1f/%.1f"),
 		*GetBossDebugName(),
@@ -60,11 +65,16 @@ void ABRBossBase::ResetBoss()
 	bIsAttacking = false;
 	bIsBeingExecuted = false;
 	bIsPhaseTransitioning = false;
+	SetEnraged(false);
 	LastDamageCauser = nullptr;
 	VerticalFallSpeed = 0.0f;
 	ProceduralHitReactionTime = 0.0f;
 	BossPhase = EBRBossPhase::Phase1;
 	ClearBaseTimers();
+	if (TeamCoordinator)
+	{
+		TeamCoordinator->NotifyMemberReset(this);
+	}
 
 	if (StatComponent)
 	{
@@ -212,6 +222,10 @@ void ABRBossBase::HandleDead()
 	bIsPhaseTransitioning = false;
 	ClearBaseTimers();
 	NotifyCoordinatedAttackFinished();
+	if (TeamCoordinator)
+	{
+		TeamCoordinator->NotifyMemberDefeated(this);
+	}
 	if (ABRBossAIController* BossAIController = GetBossAIController())
 	{
 		BossAIController->StopMovement();
@@ -222,7 +236,8 @@ void ABRBossBase::HandleDead()
 	OnBossDead.Broadcast();
 	OnBossDeadInternal();
 
-	if (AExceptionCharacter* RewardCharacter = Cast<AExceptionCharacter>(LastDamageCauser))
+	if (AExceptionCharacter* RewardCharacter = Cast<AExceptionCharacter>(LastDamageCauser);
+		RewardCharacter && (!TeamCoordinator || TeamCoordinator->ConsumeTeamDefeatReward(this)))
 	{
 		RewardCharacter->AwardBossVictoryRewards(this);
 	}
@@ -311,15 +326,55 @@ void ABRBossBase::RefreshPhaseByHP()
 
 	if (GetHPPercent() <= Phase2StartHPRatio)
 	{
-		BossPhase = EBRBossPhase::Phase2;
-		BeginPhaseTransition();
-		OnPhaseChanged.Broadcast(BossPhase);
-		OnBossPhaseChanged(BossPhase);
+		ForcePhase2(false);
+	}
+}
 
-		if (bShowDebug && GEngine)
-		{
-			GEngine->AddOnScreenDebugMessage(2011, 2.0f, FColor::Orange, TEXT("Boss Phase 2"));
-		}
+void ABRBossBase::SetEnraged(bool bNewEnraged)
+{
+	if ((bNewEnraged && bIsDead) || bIsEnraged == bNewEnraged)
+	{
+		return;
+	}
+
+	bIsEnraged = bNewEnraged;
+	OnEnrageChanged.Broadcast(bIsEnraged);
+	BP_BossEnrageChanged(bIsEnraged);
+
+	if (bShowDebug && GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(
+			2014,
+			2.0f,
+			bIsEnraged ? FColor::Red : FColor::Silver,
+			bIsEnraged ? TEXT("Boss Enraged") : TEXT("Boss Enrage Reset"));
+	}
+}
+
+void ABRBossBase::ForcePhase2(bool bReplayTransitionIfAlreadyPhase2)
+{
+	if (bIsDead)
+	{
+		return;
+	}
+
+	const bool bPhaseChanged = BossPhase != EBRBossPhase::Phase2;
+	if (!bPhaseChanged && (!bReplayTransitionIfAlreadyPhase2 || bIsPhaseTransitioning))
+	{
+		return;
+	}
+
+	BossPhase = EBRBossPhase::Phase2;
+	BeginPhaseTransition();
+	if (bPhaseChanged)
+	{
+		OnPhaseChanged.Broadcast(BossPhase);
+	}
+	OnBossPhaseChanged(BossPhase);
+
+	if (bPhaseChanged && bShowDebug && GEngine)
+	{
+		GEngine->AddOnScreenDebugMessage(2011, 2.0f, FColor::Orange, TEXT("Boss Phase 2"));
 	}
 }
 

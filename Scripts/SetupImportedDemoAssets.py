@@ -260,13 +260,13 @@ def place_hidden_weapon_altar(altar_class):
         actor = unreal.EditorLevelLibrary.spawn_actor_from_class(
             altar_class,
             unreal.Vector(2550.0, -820.0, 115.0),
-            unreal.Rotator(0.0, 35.0, 0.0),
+            unreal.Rotator(roll=0.0, pitch=0.0, yaw=35.0),
         )
         actor.set_actor_label(label)
         log(f"Spawned {label}")
     else:
         actor.set_actor_location(unreal.Vector(2550.0, -820.0, 115.0), False, False)
-        actor.set_actor_rotation(unreal.Rotator(0.0, 35.0, 0.0), False)
+        actor.set_actor_rotation(unreal.Rotator(roll=0.0, pitch=0.0, yaw=35.0), False)
 
     unreal.EditorLoadingAndSavingUtils.save_dirty_packages(True, True)
     log("Saved hidden weapon altar placement.")
@@ -277,6 +277,12 @@ def place_checkpoint_bonfire(checkpoint_class):
         return
 
     load_map()
+    legacy_checkpoint = find_actor("BRCheckpoint")
+    if legacy_checkpoint:
+        legacy_checkpoint.set_actor_location(unreal.Vector(770.0, 260.0, -5000.0), False, False)
+        legacy_checkpoint.set_actor_hidden_in_game(True)
+        legacy_checkpoint.set_actor_enable_collision(False)
+
     static_visual = find_actor("Demo_Field_CheckpointBonfire")
     if static_visual:
         unreal.EditorLevelLibrary.destroy_actor(static_visual)
@@ -286,13 +292,13 @@ def place_checkpoint_bonfire(checkpoint_class):
     if not actor:
         actor = unreal.EditorLevelLibrary.spawn_actor_from_class(
             checkpoint_class,
-            unreal.Vector(1500.0, -420.0, 150.0),
+            unreal.Vector(2180.0, 520.0, 150.0),
             unreal.Rotator(0.0, 0.0, 0.0),
         )
         actor.set_actor_label(label)
         log(f"Spawned {label}")
     else:
-        actor.set_actor_location(unreal.Vector(1500.0, -420.0, 150.0), False, False)
+        actor.set_actor_location(unreal.Vector(2180.0, 520.0, 150.0), False, False)
         actor.set_actor_rotation(unreal.Rotator(0.0, 0.0, 0.0), False)
 
     actor.set_actor_scale3d(unreal.Vector(1.3, 1.3, 1.3))
@@ -344,7 +350,7 @@ def place_demo_visuals():
             fog_material,
             collision=False,
             mesh_path="/Game/World/Portals/BossFogGate/SM_BossFogGate",
-            rotation=unreal.Rotator(0.0, 90.0, 0.0),
+            rotation=unreal.Rotator(roll=0.0, pitch=0.0, yaw=90.0),
         )
 
     spawn_or_move_static(
@@ -362,7 +368,7 @@ def place_demo_visuals():
         "/Game/Items/Weapons/Mimikatz/Left/M_MimikatzAuthoritySeized_L",
         collision=False,
         mesh_path="/Game/Items/Weapons/Mimikatz/Left/SM_MimikatzAuthoritySeized_L",
-        rotation=unreal.Rotator(0.0, 35.0, 0.0),
+        rotation=unreal.Rotator(roll=0.0, pitch=0.0, yaw=35.0),
     )
     spawn_or_move_static(
         "Demo_Field_MimikatzAuthoritySeized_R",
@@ -371,7 +377,7 @@ def place_demo_visuals():
         "/Game/Items/Weapons/Mimikatz/Right/M_MimikatzAuthoritySeized_R",
         collision=False,
         mesh_path="/Game/Items/Weapons/Mimikatz/Right/SM_MimikatzAuthoritySeized_R",
-        rotation=unreal.Rotator(0.0, -35.0, 0.0),
+        rotation=unreal.Rotator(roll=0.0, pitch=0.0, yaw=-35.0),
     )
     spawn_or_move_static(
         "Demo_Field_FieldMonster_01_Visual",
@@ -412,7 +418,7 @@ def place_demo_visuals():
         "/Game/Player/Hendel/Weapons/DefaultWeapon/M_Hendel_DefaultWeapon",
         collision=False,
         mesh_path="/Game/Player/Hendel/Weapons/DefaultWeapon/SM_Hendel_DefaultWeapon",
-        rotation=unreal.Rotator(0.0, 20.0, 0.0),
+        rotation=unreal.Rotator(roll=0.0, pitch=0.0, yaw=20.0),
     )
     spawn_or_move_static(
         "Demo_CMD_Throne",
@@ -421,7 +427,7 @@ def place_demo_visuals():
         "/Game/Bosses/CMD/Props/Throne/M_CMD_Throne",
         collision=False,
         mesh_path="/Game/Bosses/CMD/Props/Throne/SM_CMD_Throne",
-        rotation=unreal.Rotator(0.0, 180.0, 0.0),
+        rotation=unreal.Rotator(roll=0.0, pitch=0.0, yaw=180.0),
     )
 
     unreal.EditorLoadingAndSavingUtils.save_dirty_packages(True, True)

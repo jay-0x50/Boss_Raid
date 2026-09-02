@@ -274,7 +274,9 @@ def build_field():
     place_spawner(f"{PREFIX}EnemySpawner_B", unreal.Vector(3600.0, -320.0, 120.0), 3)
     place_spawner(f"{PREFIX}EnemySpawner_C", unreal.Vector(5350.0, 330.0, 120.0), 3)
     place_spawner(f"{PREFIX}EnemySpawner_D", unreal.Vector(9000.0, -330.0, 120.0), 3)
-    text_label(f"{PREFIX}FieldSign", "RUNTIME FIELD", unreal.Vector(1800.0, 0.0, 220.0), 88.0)
+    # Keep the layer name as small diegetic wayfinding instead of a prototype
+    # banner that blocks the opening cinematic.
+    text_label(f"{PREFIX}FieldSign", "RUNTIME // FIELD 0", unreal.Vector(1980.0, -500.0, 160.0), 24.0)
 
 
 def main():

@@ -5,6 +5,7 @@
 #include "BRHiddenStorySubsystem.generated.h"
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FBRNelHiddenRequestChanged, FName, RequestId);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FBRPersistentStoryIdChanged, FName, PersistentId);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBRHiddenFragmentChanged, int32, CurrentCount, int32, RequiredCount);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBRMainBossProgressChanged, FName, BossId, int32, DefeatedCount);
 
@@ -41,6 +42,24 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category="Exception|Hidden Story")
 	void CollectHiddenFragment(int32 Amount = 1);
+
+	UFUNCTION(BlueprintCallable, Category="Exception|Hidden Story")
+	bool TryCollectHiddenFragment(FName FragmentId, int32 Amount = 1);
+
+	UFUNCTION(BlueprintPure, Category="Exception|Hidden Story")
+	bool IsHiddenFragmentCollected(FName FragmentId) const;
+
+	UFUNCTION(BlueprintPure, Category="Exception|Hidden Story")
+	TArray<FName> GetCollectedHiddenFragmentIds() const;
+
+	UFUNCTION(BlueprintCallable, Category="Exception|Story")
+	bool TryConsumeNarrativeBeat(FName BeatId);
+
+	UFUNCTION(BlueprintPure, Category="Exception|Story")
+	bool IsNarrativeBeatConsumed(FName BeatId) const;
+
+	UFUNCTION(BlueprintPure, Category="Exception|Story")
+	TArray<FName> GetConsumedNarrativeBeatIds() const;
 
 	UFUNCTION(BlueprintPure, Category="Exception|Hidden Story")
 	int32 GetHiddenFragmentCount() const { return HiddenFragmentCount; }
@@ -97,6 +116,9 @@ public:
 	void ApplySavedHiddenStoryState(const TArray<FName>& RegisteredRequests, const TArray<FName>& CompletedRequests, int32 SavedHiddenFragmentCount, bool bSavedMimikatzUnlocked, bool bSavedHiddenEndingEligible, EBRRuntimeEnding SavedLastEnding, const TArray<FName>& SavedDefeatedBossIds);
 
 	UFUNCTION(BlueprintCallable, Category="Exception|Hidden Story")
+	void ApplySavedOneShotState(const TArray<FName>& SavedConsumedBeatIds, const TArray<FName>& SavedCollectedFragmentIds);
+
+	UFUNCTION(BlueprintCallable, Category="Exception|Hidden Story")
 	void ResetHiddenStoryState();
 
 	UPROPERTY(BlueprintAssignable, Category="Exception|Hidden Story")
@@ -104,6 +126,12 @@ public:
 
 	UPROPERTY(BlueprintAssignable, Category="Exception|Hidden Story")
 	FBRHiddenFragmentChanged OnHiddenFragmentChanged;
+
+	UPROPERTY(BlueprintAssignable, Category="Exception|Story")
+	FBRPersistentStoryIdChanged OnNarrativeBeatConsumed;
+
+	UPROPERTY(BlueprintAssignable, Category="Exception|Hidden Story")
+	FBRPersistentStoryIdChanged OnHiddenFragmentIdCollected;
 
 	UPROPERTY(BlueprintAssignable, Category="Exception|Main Story")
 	FBRMainBossProgressChanged OnMainBossProgressChanged;
@@ -117,6 +145,12 @@ private:
 
 	UPROPERTY()
 	TSet<FName> DefeatedMainBossIds;
+
+	UPROPERTY()
+	TSet<FName> ConsumedNarrativeBeatIds;
+
+	UPROPERTY()
+	TSet<FName> CollectedHiddenFragmentIds;
 
 	UPROPERTY()
 	int32 HiddenFragmentCount = 0;

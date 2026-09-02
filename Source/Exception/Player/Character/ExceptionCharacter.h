@@ -190,7 +190,7 @@ protected:
 	float HeavyAttackStaminaCost = 25.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Cost", meta=(ClampMin="0.0"))
-	float DodgeStaminaCost = 20.0f;
+	float DodgeStaminaCost = 25.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Cost", meta=(ClampMin="0.0"))
 	float ParryStaminaCost = 15.0f;
@@ -207,10 +207,10 @@ protected:
 	float HeavyAttackDuration = 0.8f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Timing", meta=(ClampMin="0.01", Units="s"))
-	float DodgeDuration = 0.82f;
+	float DodgeDuration = 0.65f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Timing", meta=(ClampMin="0.01", Units="s"))
-	float DodgeInvincibleDuration = 0.42f;
+	float DodgeInvincibleDuration = 0.32f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Timing", meta=(ClampMin="0.01", Units="s"))
 	float ParryDuration = 0.35f;
@@ -247,8 +247,13 @@ protected:
 	float AttackTraceRadius = 55.0f;
 
 	// 회피 / 피격 넉백
+	/** Legacy impulse tuning retained for serialized Blueprint compatibility. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Dodge", meta=(ClampMin="0.0"))
 	float DodgeImpulseStrength = 920.0f;
+
+	/** Deterministic unobstructed travel distance of one dodge roll. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Dodge", meta=(ClampMin="320.0", ClampMax="420.0", Units="cm"))
+	float DodgeRollDistance = 380.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Movement", meta=(ClampMin="100.0", Units="cm/s"))
 	float JogSpeed = 430.0f;
@@ -322,6 +327,22 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|Combo", meta=(ClampMin="0.01", Units="s"))
 	float HeavyAttackHitDelay = 0.30f;
 
+	/** Only the final portion of a light attack accepts the next combo input. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|Combo", meta=(ClampMin="0.05", ClampMax="0.5"))
+	float LightComboBufferWindowFraction = 0.35f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Attack|Hit Window", meta=(ClampMin="0.01", ClampMax="0.25", Units="s"))
+	float LightAttackHitWindowDuration = 0.10f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Attack|Hit Window", meta=(ClampMin="0.01", ClampMax="0.25", Units="s"))
+	float HeavyAttackHitWindowDuration = 0.12f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Attack|Hit Stop", meta=(ClampMin="0.035", ClampMax="0.055", Units="s"))
+	float HitStopDuration = 0.045f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Attack|Hit Stop", meta=(ClampMin="0.01", ClampMax="1.0"))
+	float HitStopTimeDilation = 0.05f;
+
 	// 현재 체력 / 현재 스태미나
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Stats")
 	float CurrentHP = 0.0f;
@@ -359,6 +380,28 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|LockOn", meta=(ClampMin="0.0", Units="cm"))
 	float LockOnBreakRange = 2000.0f;
 
+	/** A short obstruction is tolerated so pillars and camera collision do not cause lock-on flicker. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|LockOn", meta=(ClampMin="0.0", Units="s"))
+	float LockOnOcclusionBreakDelay = 1.25f;
+
+	/** Initial target selection favors actors near the center of the player's view. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|LockOn", meta=(ClampMin="0.0"))
+	float LockOnScreenCenterWeight = 0.55f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|LockOn", meta=(ClampMin="0.0"))
+	float LockOnCameraForwardWeight = 0.30f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|LockOn", meta=(ClampMin="0.0"))
+	float LockOnDistanceWeight = 0.15f;
+
+	/** Horizontal look input above this value switches to the next target on that side. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|LockOn", meta=(ClampMin="0.1", ClampMax="1.0"))
+	float LockOnSwitchInputThreshold = 0.70f;
+
+	/** The stick/mouse must return below this value before another switch can occur. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|LockOn", meta=(ClampMin="0.0", ClampMax="1.0"))
+	float LockOnSwitchInputResetThreshold = 0.20f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|LockOn", meta=(ClampMin="0.0"))
 	float LockOnRotationInterpSpeed = 8.0f;
 
@@ -394,7 +437,7 @@ protected:
 
 	// 처형
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Execution", meta=(ClampMin="0.0", Units="cm"))
-	float ExecRange = 450.0f;
+	float ExecRange = 200.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Execution", meta=(ClampMin="0.0", Units="cm"))
 	float ExecGap = 150.0f;
@@ -448,6 +491,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|LockOn")
 	float LockOnPitchOffset = 0.0f;
 
+	float LockOnOccludedTime = 0.0f;
+	bool bLockOnSwitchInputReady = true;
+
 	float LastStaminaSpendTime = -1000.0f;
 	float LastAttackDebugTime = -1000.0f;
 
@@ -459,6 +505,7 @@ protected:
 	FTimerHandle ExecutionTimerHandle;
 	FTimerHandle ExecHitTimer;
 	FTimerHandle AttackHitTimerHandle;
+	FTimerHandle HitStopTimerHandle;
 	FTimerHandle SprintHoldTimerHandle;
 	FTimerHandle FlaskHealTimerHandle;
 
@@ -478,9 +525,18 @@ protected:
 	int32 LightComboIndex = 0;
 	int32 HeavyVariationIndex = 0;
 	float LastLightComboTime = -1000.0f;
+	float CurrentLightAttackStepDuration = 0.0f;
 	float PendingAttackDamage = 0.0f;
 	float PendingAttackGroggyDamage = 0.0f;
+	float AttackHitWindowRemaining = 0.0f;
+	bool bAttackHitWindowActive = false;
+	bool bHitStopTriggeredThisAttack = false;
+	TSet<TWeakObjectPtr<AActor>> DamagedActorsThisAttack;
+	bool bHitStopActive = false;
+	float SavedPlayerCustomTimeDilation = 1.0f;
+	TMap<TWeakObjectPtr<AActor>, float> HitStopActorDilations;
 	float RollNow = 0.0f;
+	float RollTravelAlpha = 0.0f;
 	float HealNow = 0.0f;
 	float PendingHealAmount = 0.0f;
 	float NormalGroundFriction = 8.0f;
@@ -490,6 +546,12 @@ protected:
 	bool bSprintStartedThisHold = false;
 	bool bSprinting = false;
 	bool bRolling = false;
+	bool bRollStartedLockedOn = false;
+	bool bRollSavedOrientRotationToMovement = true;
+	bool bRollSavedUseControllerDesiredRotation = false;
+	float RollSavedGroundFriction = 8.0f;
+	float RollSavedBrakingDeceleration = 2000.0f;
+	float RollSavedCapsuleHalfHeight = 96.0f;
 	bool bHealApplied = false;
 	FVector RollDirection = FVector::ForwardVector;
 	FVector BaseMeshRelativeLocation = FVector::ZeroVector;
@@ -549,6 +611,7 @@ protected:
 	virtual void SetupPlayerInputComponent(class UInputComponent* PlayerInputComponent) override;
 
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 protected:
 
@@ -557,6 +620,7 @@ protected:
 
 	/** Called for looking input */
 	void Look(const FInputActionValue& Value);
+	void LookInputCompleted();
 
 	void LightAttackPressed();
 	void HeavyAttackPressed();
@@ -776,6 +840,11 @@ protected:
 	void RegisterInitialCheckpoint();
 	void SpawnPlayerGraveMarker();
 	AActor* FindLockOnTarget() const;
+	AActor* FindLockOnTargetInDirection(float ScreenDirection) const;
+	FVector GetLockOnFocusLocation(const AActor* Target) const;
+	bool IsLockOnCandidateValid(AActor* Candidate, float MaxRange, bool bRequireLineOfSight) const;
+	bool HasLockOnLineOfSight(AActor* Candidate) const;
+	void SwitchLockOnTarget(float ScreenDirection);
 	void UpdateLockOn(float DeltaSeconds);
 	ABRBossBase* FindExecutionTarget() const;
 	void StartExecution(ABRBossBase* Target);
@@ -786,9 +855,15 @@ protected:
 	void SetRootWeapon(bool bOn);
 	void PlayRootAnim(bool bHeavy);
 	void PlayAttackSequence(UAnimSequence* Anim, UAnimMontage* FallbackMontage, float Rate);
+	bool CanBufferLightComboInput() const;
 	bool StartLightComboStep();
 	void FinishLightComboStep();
 	void ApplyPendingAttackHit();
+	void BeginAttackHitWindow();
+	void UpdateAttackHitWindow(float DeltaSeconds);
+	void EndAttackHitWindow();
+	void StartHitStop(AActor* HitActor);
+	void ClearHitStop();
 	void CancelAttackChain();
 	void StartRootSwing(bool bHeavy);
 	void UpdateRootSwing(float DeltaSeconds);

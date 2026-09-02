@@ -1,12 +1,14 @@
 #include "BRWorldMapWidget.h"
 
 #include "BRWorldMapSubsystem.h"
+#include "Blueprint/WidgetLayoutLibrary.h"
 #include "Blueprint/WidgetTree.h"
 #include "Components/Border.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "Components/TextBlock.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/PlayerController.h"
 #include "Styling/CoreStyle.h"
 
 namespace
@@ -15,8 +17,6 @@ constexpr float FullMinX = 500.0f;
 constexpr float FullMaxX = 15500.0f;
 constexpr float FullMinY = -6500.0f;
 constexpr float FullMaxY = 6500.0f;
-constexpr float MiniWorldWidth = 5000.0f;
-constexpr float MiniWorldHeight = 3900.0f;
 
 float DistanceToSegmentSquared(const FVector2D& Point, const FVector2D& A, const FVector2D& B)
 {
@@ -31,10 +31,17 @@ float DistanceToSegmentSquared(const FVector2D& Point, const FVector2D& A, const
 }
 }
 
+TSharedRef<SWidget> UBRWorldMapWidget::RebuildWidget()
+{
+	// Native-only UUserWidgets must finish their WidgetTree before Super builds
+	// the Slate hierarchy; creating it in NativeConstruct is already too late.
+	BuildMapWidget();
+	return Super::RebuildWidget();
+}
+
 void UBRWorldMapWidget::NativeConstruct()
 {
 	Super::NativeConstruct();
-	BuildMapWidget();
 
 	if (UGameInstance* GameInstance = GetGameInstance())
 	{
@@ -115,7 +122,14 @@ void UBRWorldMapWidget::BuildMapWidget()
 	MapFrame = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("WorldMapFrame"));
 	MapFrame->SetBrushColor(FLinearColor(0.025f, 0.035f, 0.045f, 0.94f));
 	MapFrame->SetPadding(FMargin(2.0f));
-	RootCanvas->AddChildToCanvas(MapFrame);
+	if (UCanvasPanelSlot* FrameSlot = RootCanvas->AddChildToCanvas(MapFrame))
+	{
+		FrameSlot->SetAutoSize(false);
+		FrameSlot->SetAnchors(FAnchors(1.0f, 0.0f));
+		FrameSlot->SetAlignment(FVector2D(1.0f, 0.0f));
+		FrameSlot->SetPosition(FVector2D(-MiniMapScreenMargin.X, MiniMapScreenMargin.Y));
+		FrameSlot->SetSize(MiniMapFrameSize);
+	}
 
 	MapCanvas = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("MapCanvas"));
 	MapCanvas->SetClipping(EWidgetClipping::ClipToBounds);
@@ -284,28 +298,40 @@ void UBRWorldMapWidget::RefreshLayout()
 		return;
 	}
 
+	int32 ViewportSizeX = 0;
+	int32 ViewportSizeY = 0;
+	if (const APlayerController* PlayerController = GetOwningPlayer())
+	{
+		PlayerController->GetViewportSize(ViewportSizeX, ViewportSizeY);
+	}
+	const float ViewportScale = FMath::Max(UWidgetLayoutLibrary::GetViewportScale(this), 0.01f);
+	const FVector2D ViewportSize(
+		(ViewportSizeX > 0 ? static_cast<float>(ViewportSizeX) : 1920.0f) / ViewportScale,
+		(ViewportSizeY > 0 ? static_cast<float>(ViewportSizeY) : 1080.0f) / ViewportScale);
+	const FVector2D MiniFrameSize(
+		FMath::Min(MiniMapFrameSize.X, FMath::Max(ViewportSize.X - MiniMapScreenMargin.X * 2.0f, 120.0f)),
+		FMath::Min(MiniMapFrameSize.Y, FMath::Max(ViewportSize.Y - MiniMapScreenMargin.Y * 2.0f, 120.0f)));
+	const FVector2D FullFrameSize(
+		FMath::Min(FullMapFrameSize.X, FMath::Max(ViewportSize.X - 48.0f, 320.0f)),
+		FMath::Min(FullMapFrameSize.Y, FMath::Max(ViewportSize.Y - 48.0f, 240.0f)));
+	const FVector2D FrameSize = bFullMapMode ? FullFrameSize : MiniFrameSize;
+
 	if (UCanvasPanelSlot* FrameSlot = Cast<UCanvasPanelSlot>(MapFrame->Slot))
 	{
-		if (bFullMapMode)
-		{
-			FrameSlot->SetAnchors(FAnchors(0.5f, 0.5f));
-			FrameSlot->SetAlignment(FVector2D(0.5f, 0.5f));
-			FrameSlot->SetPosition(FVector2D::ZeroVector);
-			FrameSlot->SetSize(FVector2D(1180.0f, 740.0f));
-		}
-		else
-		{
-			FrameSlot->SetAnchors(FAnchors(1.0f, 0.0f));
-			FrameSlot->SetAlignment(FVector2D(1.0f, 0.0f));
-			FrameSlot->SetPosition(FVector2D(-28.0f, 28.0f));
-			FrameSlot->SetSize(FVector2D(340.0f, 260.0f));
-		}
+		FrameSlot->SetAnchors(FAnchors(0.0f, 0.0f));
+		FrameSlot->SetAlignment(FVector2D::ZeroVector);
+		FrameSlot->SetPosition(bFullMapMode
+			? (ViewportSize - FullFrameSize) * 0.5f
+			: FVector2D(FMath::Max(ViewportSize.X - MiniMapScreenMargin.X - MiniFrameSize.X, 0.0f), MiniMapScreenMargin.Y));
+		FrameSlot->SetSize(FrameSize);
 	}
 
 	FullScreenShade->SetVisibility(bFullMapMode ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 	MapFrame->SetBrushColor(bFullMapMode ? FLinearColor(0.022f, 0.030f, 0.038f, 0.985f) : FLinearColor(0.018f, 0.028f, 0.036f, 0.88f));
 	MapOrigin = bFullMapMode ? FVector2D(36.0f, 70.0f) : FVector2D(18.0f, 44.0f);
-	MapSize = bFullMapMode ? FVector2D(1108.0f, 610.0f) : FVector2D(304.0f, 184.0f);
+	MapSize = bFullMapMode
+		? FVector2D(FMath::Max(FullFrameSize.X - 72.0f, 100.0f), FMath::Max(FullFrameSize.Y - 130.0f, 100.0f))
+		: FVector2D(FMath::Max(MiniFrameSize.X - 36.0f, 100.0f), FMath::Max(MiniFrameSize.Y - 76.0f, 100.0f));
 
 	if (const APawn* Pawn = GetOwningPlayerPawn())
 	{
@@ -320,8 +346,8 @@ void UBRWorldMapWidget::RefreshLayout()
 	MapTitle->SetFont(FSlateFontInfo(FCoreStyle::GetDefaultFont(), bFullMapMode ? 18 : 13));
 	if (UCanvasPanelSlot* HintSlot = Cast<UCanvasPanelSlot>(ModeHintText->Slot))
 	{
-		HintSlot->SetPosition(FVector2D(36.0f, 700.0f));
-		HintSlot->SetSize(FVector2D(700.0f, 24.0f));
+		HintSlot->SetPosition(FVector2D(36.0f, FMath::Max(FullFrameSize.Y - 40.0f, 0.0f)));
+		HintSlot->SetSize(FVector2D(FMath::Max(FullFrameSize.X - 72.0f, 100.0f), 24.0f));
 	}
 	ModeHintText->SetVisibility(bFullMapMode ? ESlateVisibility::HitTestInvisible : ESlateVisibility::Collapsed);
 
@@ -377,10 +403,12 @@ void UBRWorldMapWidget::RefreshPlayerMarker()
 
 FVector2D UBRWorldMapWidget::WorldToMap(const FVector2D& WorldLocation) const
 {
-	const float MinX = bFullMapMode ? FullMinX : MiniMapWorldCenter.X - MiniWorldWidth * 0.5f;
-	const float MaxX = bFullMapMode ? FullMaxX : MiniMapWorldCenter.X + MiniWorldWidth * 0.5f;
-	const float MinY = bFullMapMode ? FullMinY : MiniMapWorldCenter.Y - MiniWorldHeight * 0.5f;
-	const float MaxY = bFullMapMode ? FullMaxY : MiniMapWorldCenter.Y + MiniWorldHeight * 0.5f;
+	const float MiniWidth = FMath::Max(MiniMapWorldSpan.X, 100.0f);
+	const float MiniHeight = FMath::Max(MiniMapWorldSpan.Y, 100.0f);
+	const float MinX = bFullMapMode ? FullMinX : MiniMapWorldCenter.X - MiniWidth * 0.5f;
+	const float MaxX = bFullMapMode ? FullMaxX : MiniMapWorldCenter.X + MiniWidth * 0.5f;
+	const float MinY = bFullMapMode ? FullMinY : MiniMapWorldCenter.Y - MiniHeight * 0.5f;
+	const float MaxY = bFullMapMode ? FullMaxY : MiniMapWorldCenter.Y + MiniHeight * 0.5f;
 	const float X = MapOrigin.X + (WorldLocation.X - MinX) / (MaxX - MinX) * MapSize.X;
 	const float Y = MapOrigin.Y + MapSize.Y - (WorldLocation.Y - MinY) / (MaxY - MinY) * MapSize.Y;
 	return FVector2D(X, Y);
