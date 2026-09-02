@@ -6,7 +6,9 @@
 
 void AExceptionCharacter::DoMove(float Right, float Forward)
 {
-	if (CombatState == EBRPlayerCombatState::Dead || CombatState == EBRPlayerCombatState::Hit || CombatState == EBRPlayerCombatState::Execution)
+	if (CombatState == EBRPlayerCombatState::Dead || CombatState == EBRPlayerCombatState::Hit
+		|| CombatState == EBRPlayerCombatState::Dodge || CombatState == EBRPlayerCombatState::Healing
+		|| CombatState == EBRPlayerCombatState::Execution)
 	{
 		return;
 	}

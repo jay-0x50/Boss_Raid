@@ -14,8 +14,10 @@ class UInputAction;
 class UInputMappingContext;
 class UAnimMontage;
 class UAnimSequence;
+class UMaterialInstanceDynamic;
 class UBRInventoryComponent;
 class UStaticMeshComponent;
+class UPointLightComponent;
 class ABRBossBase;
 class ABRPlayerGraveMarker;
 struct FInputActionValue;
@@ -32,6 +34,7 @@ enum class EBRPlayerCombatState : uint8
 	HeavyAttack,
 	Dodge,
 	Parry,
+	Healing,
 	Execution,
 	Hit,
 	Dead
@@ -74,6 +77,12 @@ class AExceptionCharacter : public ACharacter
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
 	TObjectPtr<UStaticMeshComponent> RootBladeL;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UStaticMeshComponent> RuntimeFlask;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components", meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UPointLightComponent> FlaskAura;
 	
 protected:
 
@@ -115,6 +124,9 @@ protected:
 
 	UPROPERTY(EditAnywhere, Category="Input|Combat")
 	UInputAction* LockOnAction;
+
+	UPROPERTY(EditAnywhere, Category="Input|Combat")
+	UInputAction* UseFlaskAction;
 
 	// 체력 / 스태미나
 	/** Max player HP for the boss raid demo */
@@ -195,10 +207,10 @@ protected:
 	float HeavyAttackDuration = 0.8f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Timing", meta=(ClampMin="0.01", Units="s"))
-	float DodgeDuration = 0.55f;
+	float DodgeDuration = 0.82f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Timing", meta=(ClampMin="0.01", Units="s"))
-	float DodgeInvincibleDuration = 0.35f;
+	float DodgeInvincibleDuration = 0.42f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Timing", meta=(ClampMin="0.01", Units="s"))
 	float ParryDuration = 0.35f;
@@ -236,7 +248,31 @@ protected:
 
 	// 회피 / 피격 넉백
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Dodge", meta=(ClampMin="0.0"))
-	float DodgeImpulseStrength = 650.0f;
+	float DodgeImpulseStrength = 920.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Movement", meta=(ClampMin="100.0", Units="cm/s"))
+	float JogSpeed = 430.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Movement", meta=(ClampMin="100.0", Units="cm/s"))
+	float SprintSpeed = 680.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Movement", meta=(ClampMin="0.0"))
+	float SprintStaminaPerSecond = 16.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Movement", meta=(ClampMin="0.05", Units="s"))
+	float SprintHoldTime = 0.22f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Dodge", meta=(ClampMin="0.0", Units="cm"))
+	float RollVisualLift = 18.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Dodge", meta=(ClampMin="40.0", Units="cm"))
+	float RollCapsuleHalfHeight = 62.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Healing", meta=(ClampMin="0.2", Units="s"))
+	float FlaskUseTime = 1.25f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Healing", meta=(ClampMin="0.05", Units="s"))
+	float FlaskHealDelay = 0.72f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Hit", meta=(ClampMin="0.0"))
 	float HitKnockbackStrength = 350.0f;
@@ -260,11 +296,31 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation")
 	TObjectPtr<UAnimMontage> HitMontage;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation")
+	TObjectPtr<UAnimMontage> HealMontage;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|RootBlade")
 	TObjectPtr<UAnimSequence> RootLightAnim;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|RootBlade")
 	TObjectPtr<UAnimSequence> RootHeavyAnim;
+
+	/** Three quick attacks used in order when the player buffers light attack input. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|Combo")
+	TArray<TObjectPtr<UAnimSequence>> LightComboAnims;
+
+	/** Alternate committed heavy swing, used every other heavy attack. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|Combo")
+	TObjectPtr<UAnimSequence> HeavyAltAnim;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|Combo", meta=(ClampMin="0.1", Units="s"))
+	float ComboResetDelay = 0.9f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|Combo", meta=(ClampMin="0.01", Units="s"))
+	float LightAttackHitDelay = 0.16f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|Combo", meta=(ClampMin="0.01", Units="s"))
+	float HeavyAttackHitDelay = 0.30f;
 
 	// 현재 체력 / 현재 스태미나
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Stats")
@@ -402,6 +458,9 @@ protected:
 	FTimerHandle RespawnTimerHandle;
 	FTimerHandle ExecutionTimerHandle;
 	FTimerHandle ExecHitTimer;
+	FTimerHandle AttackHitTimerHandle;
+	FTimerHandle SprintHoldTimerHandle;
+	FTimerHandle FlaskHealTimerHandle;
 
 	// 처형 대상
 	UPROPERTY(Transient)
@@ -415,6 +474,28 @@ protected:
 	float ExecDmg = 0.0f;
 	float StepNow = 0.0f;
 	bool bLeftStep = false;
+	bool bLightComboQueued = false;
+	int32 LightComboIndex = 0;
+	int32 HeavyVariationIndex = 0;
+	float LastLightComboTime = -1000.0f;
+	float PendingAttackDamage = 0.0f;
+	float PendingAttackGroggyDamage = 0.0f;
+	float RollNow = 0.0f;
+	float HealNow = 0.0f;
+	float PendingHealAmount = 0.0f;
+	float NormalGroundFriction = 8.0f;
+	float NormalBrakingDeceleration = 2000.0f;
+	float NormalCapsuleHalfHeight = 96.0f;
+	bool bDodgeHeld = false;
+	bool bSprintStartedThisHold = false;
+	bool bSprinting = false;
+	bool bRolling = false;
+	bool bHealApplied = false;
+	FVector RollDirection = FVector::ForwardVector;
+	FVector BaseMeshRelativeLocation = FVector::ZeroVector;
+	FRotator BaseMeshRelativeRotation = FRotator::ZeroRotator;
+	FVector FlaskBaseLocation = FVector::ZeroVector;
+	FRotator FlaskBaseRotation = FRotator::ZeroRotator;
 	FRotator BladeBaseR = FRotator::ZeroRotator;
 	FRotator BladeBaseL = FRotator::ZeroRotator;
 
@@ -449,6 +530,12 @@ protected:
 	UPROPERTY(Transient)
 	TObjectPtr<UInputAction> RuntimeBossPlate3Action;
 
+	UPROPERTY(Transient)
+	TObjectPtr<UInputAction> RuntimeUseFlaskAction;
+
+	UPROPERTY(Transient)
+	TArray<TObjectPtr<UMaterialInstanceDynamic>> HendelMaterials;
+
 public:
 
 	/** Constructor */
@@ -474,9 +561,11 @@ protected:
 	void LightAttackPressed();
 	void HeavyAttackPressed();
 	void DodgePressed();
+	void DodgeReleased();
 	void ParryPressed();
 	void InteractPressed();
 	void LockOnPressed();
+	void UseFlaskPressed();
 	void BossPlate1Pressed();
 	void BossPlate2Pressed();
 	void BossPlate3Pressed();
@@ -696,12 +785,31 @@ protected:
 	void ResetExecCam();
 	void SetRootWeapon(bool bOn);
 	void PlayRootAnim(bool bHeavy);
+	void PlayAttackSequence(UAnimSequence* Anim, UAnimMontage* FallbackMontage, float Rate);
+	bool StartLightComboStep();
+	void FinishLightComboStep();
+	void ApplyPendingAttackHit();
+	void CancelAttackChain();
 	void StartRootSwing(bool bHeavy);
 	void UpdateRootSwing(float DeltaSeconds);
 	void UpdateStepSfx(float DeltaSeconds);
 	void PlayStepSfx();
 	void PlaySwingSfx(bool bHeavy);
 	void PlayHitSfx();
+	void PlayHealSfx();
+	void ApplyHendelAppearance();
+	void UpdateHendelAppearance();
+	void BeginSprintIfHeld();
+	void StopSprint();
+	void UpdateSprint(float DeltaSeconds);
+	void StartDodgeRoll(const FVector& Direction);
+	void UpdateDodgeRoll(float DeltaSeconds);
+	void EndDodgeRoll();
+	bool BeginFlaskHeal(float HealAmount);
+	void ApplyFlaskHeal();
+	void FinishFlaskHeal();
+	void UpdateFlaskHeal(float DeltaSeconds);
+	void CancelFlaskHeal();
 	float GetEffectiveAttackDamage(float BaseDamage, AActor* TargetActor) const;
 
 	float BaseMaxHP = 0.0f;

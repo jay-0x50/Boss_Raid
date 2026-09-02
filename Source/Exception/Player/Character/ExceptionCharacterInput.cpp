@@ -2,6 +2,7 @@
 
 #include "Player/Character/ExceptionCharacter.h"
 
+#include "BRInventoryComponent.h"
 #include "EnhancedInputComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
@@ -9,6 +10,7 @@
 #include "InputAction.h"
 #include "InputActionValue.h"
 #include "InputMappingContext.h"
+#include "TimerManager.h"
 #include "World/BRBossActivationPlate.h"
 
 void AExceptionCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -35,6 +37,7 @@ void AExceptionCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInput
 		if (DodgeAction)
 		{
 			EnhancedInputComponent->BindAction(DodgeAction, ETriggerEvent::Started, this, &AExceptionCharacter::DodgePressed);
+			EnhancedInputComponent->BindAction(DodgeAction, ETriggerEvent::Completed, this, &AExceptionCharacter::DodgeReleased);
 		}
 
 		if (ParryAction)
@@ -50,6 +53,11 @@ void AExceptionCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInput
 		if (LockOnAction)
 		{
 			EnhancedInputComponent->BindAction(LockOnAction, ETriggerEvent::Started, this, &AExceptionCharacter::LockOnPressed);
+		}
+
+		if (UseFlaskAction)
+		{
+			EnhancedInputComponent->BindAction(UseFlaskAction, ETriggerEvent::Started, this, &AExceptionCharacter::UseFlaskPressed);
 		}
 
 		SetupRuntimeCombatInput(EnhancedInputComponent);
@@ -84,7 +92,32 @@ void AExceptionCharacter::HeavyAttackPressed()
 
 void AExceptionCharacter::DodgePressed()
 {
-	DoDodge();
+	if (bDodgeHeld || CombatState != EBRPlayerCombatState::Idle)
+	{
+		return;
+	}
+
+	bDodgeHeld = true;
+	bSprintStartedThisHold = false;
+	GetWorldTimerManager().SetTimer(SprintHoldTimerHandle, this, &AExceptionCharacter::BeginSprintIfHeld, SprintHoldTime, false);
+}
+
+void AExceptionCharacter::DodgeReleased()
+{
+	if (!bDodgeHeld)
+	{
+		return;
+	}
+
+	bDodgeHeld = false;
+	GetWorldTimerManager().ClearTimer(SprintHoldTimerHandle);
+	const bool bWasSprint = bSprintStartedThisHold;
+	bSprintStartedThisHold = false;
+	StopSprint();
+	if (!bWasSprint)
+	{
+		DoDodge();
+	}
 }
 
 void AExceptionCharacter::ParryPressed()
@@ -100,6 +133,20 @@ void AExceptionCharacter::InteractPressed()
 void AExceptionCharacter::LockOnPressed()
 {
 	ToggleLockOn();
+}
+
+void AExceptionCharacter::UseFlaskPressed()
+{
+	if (!InventoryComponent || CombatState != EBRPlayerCombatState::Idle)
+	{
+		return;
+	}
+
+	int32 FlaskSlot = InventoryComponent->FindFirstItemSlot(TEXT("Potion_RuntimeFlask"));
+	if (FlaskSlot != INDEX_NONE)
+	{
+		InventoryComponent->UseSlot(FlaskSlot);
+	}
 }
 
 void AExceptionCharacter::BossPlate1Pressed()
@@ -159,6 +206,7 @@ void AExceptionCharacter::SetupRuntimeCombatInput(UEnhancedInputComponent* Enhan
 		RuntimeDodgeAction->ValueType = EInputActionValueType::Boolean;
 		RuntimeCombatMappingContext->MapKey(RuntimeDodgeAction, EKeys::LeftShift);
 		EnhancedInputComponent->BindAction(RuntimeDodgeAction, ETriggerEvent::Started, this, &AExceptionCharacter::DodgePressed);
+		EnhancedInputComponent->BindAction(RuntimeDodgeAction, ETriggerEvent::Completed, this, &AExceptionCharacter::DodgeReleased);
 		bNeedsRuntimeMapping = true;
 	}
 
@@ -186,6 +234,15 @@ void AExceptionCharacter::SetupRuntimeCombatInput(UEnhancedInputComponent* Enhan
 		RuntimeLockOnAction->ValueType = EInputActionValueType::Boolean;
 		RuntimeCombatMappingContext->MapKey(RuntimeLockOnAction, EKeys::Tab);
 		EnhancedInputComponent->BindAction(RuntimeLockOnAction, ETriggerEvent::Started, this, &AExceptionCharacter::LockOnPressed);
+		bNeedsRuntimeMapping = true;
+	}
+
+	if (!UseFlaskAction)
+	{
+		RuntimeUseFlaskAction = NewObject<UInputAction>(this, TEXT("IA_RuntimeUseFlask"));
+		RuntimeUseFlaskAction->ValueType = EInputActionValueType::Boolean;
+		RuntimeCombatMappingContext->MapKey(RuntimeUseFlaskAction, EKeys::Q);
+		EnhancedInputComponent->BindAction(RuntimeUseFlaskAction, ETriggerEvent::Started, this, &AExceptionCharacter::UseFlaskPressed);
 		bNeedsRuntimeMapping = true;
 	}
 

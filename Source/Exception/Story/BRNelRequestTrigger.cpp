@@ -1,9 +1,12 @@
 #include "BRNelRequestTrigger.h"
 
+#include "BRNarrativeQueueSubsystem.h"
+#include "Story/BRNelCompanion.h"
 #include "Player/Character/ExceptionCharacter.h"
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/Engine.h"
+#include "Engine/GameInstance.h"
 #include "Engine/StaticMesh.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -31,6 +34,7 @@ ABRNelRequestTrigger::ABRNelRequestTrigger()
 	}
 
 	RequestCompletedMessage = FText::FromString(TEXT("Nel request completed."));
+	DisplayLine = FText::FromString(TEXT("이 흔적, 그냥 지나치기엔 조금 이상하지 않아?"));
 }
 
 void ABRNelRequestTrigger::BeginPlay()
@@ -46,16 +50,41 @@ void ABRNelRequestTrigger::BeginPlay()
 void ABRNelRequestTrigger::OnRequestBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
 	AExceptionCharacter* PlayerCharacter = Cast<AExceptionCharacter>(OtherActor);
-	if (!PlayerCharacter || RequestId.IsNone())
+	if (!PlayerCharacter || (bTriggerOnce && bWasTriggered))
 	{
 		return;
 	}
 
-	PlayerCharacter->CompleteNelHiddenRequest(RequestId);
+	bWasTriggered = true;
+	if (bCompletesRequest && !RequestId.IsNone())
+	{
+		PlayerCharacter->CompleteNelHiddenRequest(RequestId);
+	}
 
-	if (GEngine)
+	if (!DisplayLine.IsEmpty())
+	{
+		if (UGameInstance* GI = GetGameInstance())
+		{
+			if (UBRNarrativeQueueSubsystem* StoryQueue = GI->GetSubsystem<UBRNarrativeQueueSubsystem>())
+			{
+				StoryQueue->ShowNelLine(DisplayLine, bIsHiddenRequestHint, 4.5f);
+			}
+		}
+	}
+
+	if (bShowNelCompanion && NelCompanion)
+	{
+		NelCompanion->Appear(NelVisibleTime);
+	}
+
+	if (GEngine && bCompletesRequest)
 	{
 		GEngine->AddOnScreenDebugMessage(5102, 2.5f, FColor::Cyan, RequestCompletedMessage.ToString());
+	}
+
+	if (bTriggerOnce && TriggerBox)
+	{
+		TriggerBox->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	}
 
 	if (bDestroyOnComplete)

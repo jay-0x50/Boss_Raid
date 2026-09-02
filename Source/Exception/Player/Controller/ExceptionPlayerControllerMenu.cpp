@@ -48,6 +48,11 @@ UUserWidget* AExceptionPlayerController::ShowPauseMenuWidget()
 		return nullptr;
 	}
 
+	if (IsWorldMapOpen())
+	{
+		HideWorldMapWidget();
+	}
+
 	if (!PauseMenuWidget && PauseMenuWidgetClass)
 	{
 		PauseMenuWidget = CreateWidget<UUserWidget>(this, PauseMenuWidgetClass);
@@ -86,6 +91,12 @@ void AExceptionPlayerController::HidePauseMenuWidget()
 
 void AExceptionPlayerController::TogglePauseMenuWidget()
 {
+	if (IsWorldMapOpen())
+	{
+		HideWorldMapWidget();
+		return;
+	}
+
 	if (IsPauseMenuOpen())
 	{
 		HidePauseMenuWidget();

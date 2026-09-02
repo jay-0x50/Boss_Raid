@@ -3,6 +3,7 @@
 #include "BRSaveGame.h"
 #include "BRInventoryComponent.h"
 #include "BRHiddenStorySubsystem.h"
+#include "BRWorldMapSubsystem.h"
 #include "Player/Character/ExceptionCharacter.h"
 #include "ExceptionGameMode.h"
 #include "Kismet/GameplayStatics.h"
@@ -62,6 +63,11 @@ bool UBRSaveGameSubsystem::SaveCurrentGame(const FString& SlotName, int32 UserIn
 			SaveGame->bMimikatzAuthoritySeizedUnlocked = HiddenStory->IsMimikatzAuthoritySeizedUnlocked();
 			SaveGame->bHiddenEndingEligible = HiddenStory->IsHiddenEndingEligible();
 			SaveGame->LastResolvedEnding = HiddenStory->GetLastResolvedEnding();
+			SaveGame->DefeatedBossIds = HiddenStory->GetDefeatedMainBossIds();
+		}
+		if (UBRWorldMapSubsystem* WorldMap = GameInstance->GetSubsystem<UBRWorldMapSubsystem>())
+		{
+			SaveGame->UnlockedMapRegionIds = WorldMap->GetUnlockedRegionIds();
 		}
 	}
 
@@ -136,8 +142,13 @@ bool UBRSaveGameSubsystem::ApplyPendingLoadedGame()
 				PendingSaveGame->HiddenFragmentCount,
 				PendingSaveGame->bMimikatzAuthoritySeizedUnlocked,
 				PendingSaveGame->bHiddenEndingEligible,
-				PendingSaveGame->LastResolvedEnding);
+				PendingSaveGame->LastResolvedEnding,
+				PendingSaveGame->DefeatedBossIds);
 			PlayerCharacter->RefreshHiddenStoryRewards();
+		}
+		if (UBRWorldMapSubsystem* WorldMap = GameInstance->GetSubsystem<UBRWorldMapSubsystem>())
+		{
+			WorldMap->ApplySavedMapState(PendingSaveGame->UnlockedMapRegionIds);
 		}
 	}
 
@@ -157,6 +168,15 @@ bool UBRSaveGameSubsystem::DoesSaveExist(const FString& SlotName, int32 UserInde
 
 bool UBRSaveGameSubsystem::DeleteSave(const FString& SlotName, int32 UserIndex)
 {
+	PendingSaveGame = nullptr;
+	if (UGameInstance* GameInstance = GetGameInstance())
+	{
+		if (UBRWorldMapSubsystem* WorldMap = GameInstance->GetSubsystem<UBRWorldMapSubsystem>())
+		{
+			WorldMap->ResetMapState();
+		}
+	}
+
 	if (!UGameplayStatics::DoesSaveGameExist(SlotName, UserIndex))
 	{
 		return true;

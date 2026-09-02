@@ -4,14 +4,19 @@
 
 #include "BRInventoryComponent.h"
 #include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
 #include "Animation/AnimSequence.h"
 #include "Camera/CameraComponent.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/PointLightComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/SkeletalMesh.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "HAL/PlatformTime.h"
 #include "Kismet/GameplayStatics.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "Materials/MaterialInterface.h"
 #include "Sound/SoundWaveProcedural.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -24,7 +29,8 @@ namespace
 		Step,
 		Swing,
 		BigSwing,
-		Hit
+		Hit,
+		Heal
 	};
 
 	USoundWaveProcedural* MakePlayerSfx(UObject* Outer, EPlayerSfx Kind)
@@ -33,6 +39,7 @@ namespace
 		const float Len = Kind == EPlayerSfx::Step ? 0.11f
 			: Kind == EPlayerSfx::Swing ? 0.22f
 			: Kind == EPlayerSfx::BigSwing ? 0.34f
+			: Kind == EPlayerSfx::Heal ? 0.62f
 			: 0.13f;
 		const int32 Count = FMath::Max(1, FMath::RoundToInt(Len * Rate));
 		TArray<int16> Pcm;
@@ -58,6 +65,15 @@ namespace
 				const float Metal = FMath::Sin(2.0f * PI * 740.0f * T);
 				const float Knock = FMath::Sin(2.0f * PI * 105.0f * T);
 				Sample = (Metal * 0.32f + Knock * 0.7f + Noise * 0.28f) * FMath::Exp(-24.0f * T);
+			}
+			else if (Kind == EPlayerSfx::Heal)
+			{
+				const float Chime = FMath::Sin(2.0f * PI * 523.25f * T)
+					+ 0.55f * FMath::Sin(2.0f * PI * 783.99f * T)
+					+ 0.28f * FMath::Sin(2.0f * PI * 1046.5f * T);
+				const float Rise = FMath::SmoothStep(0.0f, 0.22f, T);
+				const float Fall = FMath::Exp(-3.8f * T);
+				Sample = Chime * 0.22f * Rise * Fall + SoftNoise * 0.025f * Fall;
 			}
 			else
 			{
@@ -97,10 +113,15 @@ AExceptionCharacter::AExceptionCharacter()
 	GetCharacterMovement()->RotationRate = FRotator(0.0f, 500.0f, 0.0f);
 	GetCharacterMovement()->JumpZVelocity = 500.f;
 	GetCharacterMovement()->AirControl = 0.35f;
-	GetCharacterMovement()->MaxWalkSpeed = 500.f;
+	GetCharacterMovement()->MaxWalkSpeed = JogSpeed;
 	GetCharacterMovement()->MinAnalogWalkSpeed = 20.f;
-	GetCharacterMovement()->BrakingDecelerationWalking = 2000.f;
+	GetCharacterMovement()->MaxAcceleration = 1500.0f;
+	GetCharacterMovement()->GroundFriction = 7.2f;
+	GetCharacterMovement()->BrakingDecelerationWalking = 1500.f;
 	GetCharacterMovement()->BrakingDecelerationFalling = 1500.0f;
+	NormalGroundFriction = GetCharacterMovement()->GroundFriction;
+	NormalBrakingDeceleration = GetCharacterMovement()->BrakingDecelerationWalking;
+	NormalCapsuleHalfHeight = GetCapsuleComponent()->GetUnscaledCapsuleHalfHeight();
 
 	CameraBoom = CreateDefaultSubobject<USpringArmComponent>(TEXT("CameraBoom"));
 	CameraBoom->SetupAttachment(RootComponent);
@@ -136,6 +157,30 @@ AExceptionCharacter::AExceptionCharacter()
 	RootBladeL->SetRelativeRotation(BladeBaseL);
 	RootBladeL->SetRelativeScale3D(FVector(BladeSize));
 
+	RuntimeFlask = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("RuntimeFlask"));
+	RuntimeFlask->SetupAttachment(GetMesh(), TEXT("HandGrip_R"));
+	RuntimeFlask->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	RuntimeFlask->SetGenerateOverlapEvents(false);
+	RuntimeFlask->SetCastShadow(false);
+	RuntimeFlask->SetHiddenInGame(true);
+	RuntimeFlask->SetRelativeLocation(FVector(2.5f, 1.5f, -1.0f));
+	RuntimeFlask->SetRelativeRotation(FRotator(8.0f, 88.0f, -12.0f));
+	RuntimeFlask->SetRelativeScale3D(FVector(0.72f));
+
+	static ConstructorHelpers::FObjectFinder<UStaticMesh> FlaskMesh(TEXT("/Game/Items/Consumables/RuntimeFlask/Filled/SM_RuntimeFlask_Filled.SM_RuntimeFlask_Filled"));
+	if (FlaskMesh.Succeeded())
+	{
+		RuntimeFlask->SetStaticMesh(FlaskMesh.Object);
+	}
+
+	FlaskAura = CreateDefaultSubobject<UPointLightComponent>(TEXT("FlaskAura"));
+	FlaskAura->SetupAttachment(RuntimeFlask);
+	FlaskAura->SetRelativeLocation(FVector(0.0f, 0.0f, 16.0f));
+	FlaskAura->SetLightColor(FLinearColor(0.12f, 0.82f, 1.0f));
+	FlaskAura->SetIntensity(0.0f);
+	FlaskAura->SetAttenuationRadius(240.0f);
+	FlaskAura->SetCastShadows(false);
+
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> BladeRMesh(TEXT("/Game/Items/Weapons/Mimikatz/Right/SM_MimikatzAuthoritySeized_R.SM_MimikatzAuthoritySeized_R"));
 	static ConstructorHelpers::FObjectFinder<UStaticMesh> BladeLMesh(TEXT("/Game/Items/Weapons/Mimikatz/Left/SM_MimikatzAuthoritySeized_L.SM_MimikatzAuthoritySeized_L"));
 	RootBladeR->SetStaticMesh(BladeRMesh.Object);
@@ -143,8 +188,27 @@ AExceptionCharacter::AExceptionCharacter()
 
 	static ConstructorHelpers::FObjectFinder<UAnimSequence> RootLight(TEXT("/Game/Characters/Mannequins/Anims/Unarmed/Attack/MM_Attack_02.MM_Attack_02"));
 	static ConstructorHelpers::FObjectFinder<UAnimSequence> RootHeavy(TEXT("/Game/Characters/Mannequins/Anims/Unarmed/Attack/MM_Attack_03.MM_Attack_03"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> ComboOne(TEXT("/Game/Characters/Mannequins/Anims/Unarmed/Attack/MM_Attack_01.MM_Attack_01"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> ComboTwo(TEXT("/Game/Characters/Mannequins/Anims/Unarmed/Attack/MM_Attack_02.MM_Attack_02"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> ComboThree(TEXT("/Game/Characters/Mannequins/Anims/Unarmed/Attack/MM_Attack_03.MM_Attack_03"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> HeavyAlt(TEXT("/Game/Characters/Mannequins/Anims/Unarmed/Attack/MM_ChargedAttack.MM_ChargedAttack"));
+	static ConstructorHelpers::FObjectFinder<UAnimMontage> HealUse(TEXT("/Game/Characters/Mannequins/Anims/Unarmed/Attack/AM_Player_Parry.AM_Player_Parry"));
 	RootLightAnim = RootLight.Object;
 	RootHeavyAnim = RootHeavy.Object;
+	if (ComboOne.Succeeded())
+	{
+		LightComboAnims.Add(ComboOne.Object);
+	}
+	if (ComboTwo.Succeeded())
+	{
+		LightComboAnims.Add(ComboTwo.Object);
+	}
+	if (ComboThree.Succeeded())
+	{
+		LightComboAnims.Add(ComboThree.Object);
+	}
+	HeavyAltAnim = HeavyAlt.Object;
+	HealMontage = HealUse.Object;
 }
 
 void AExceptionCharacter::Tick(float DeltaSeconds)
@@ -168,25 +232,98 @@ void AExceptionCharacter::Tick(float DeltaSeconds)
 		BroadcastStamina();
 	}
 
+	UpdateSprint(DeltaSeconds);
+	UpdateDodgeRoll(DeltaSeconds);
+	UpdateFlaskHeal(DeltaSeconds);
 	UpdateLockOn(DeltaSeconds);
 	UpdateStepSfx(DeltaSeconds);
 	UpdateRootSwing(DeltaSeconds);
 	UpdateExecCam(DeltaSeconds);
+	UpdateHendelAppearance();
 	DrawCombatDebug();
+}
+
+void AExceptionCharacter::ApplyHendelAppearance()
+{
+	USkeletalMeshComponent* BodyMesh = GetMesh();
+	if (!BodyMesh)
+	{
+		return;
+	}
+
+	if (USkeletalMesh* HendelMesh = LoadObject<USkeletalMesh>(nullptr, TEXT("/Game/Characters/Mannequins/Meshes/SKM_Manny_Simple.SKM_Manny_Simple")))
+	{
+		BodyMesh->SetSkeletalMeshAsset(HendelMesh);
+	}
+
+	const TCHAR* MaterialPaths[] =
+	{
+		TEXT("/Game/Characters/Exception/Materials/M_Hendel_Armor01.M_Hendel_Armor01"),
+		TEXT("/Game/Characters/Exception/Materials/M_Hendel_Armor02.M_Hendel_Armor02"),
+	};
+
+	HendelMaterials.Reset();
+	for (int32 MaterialIndex = 0; MaterialIndex < UE_ARRAY_COUNT(MaterialPaths); ++MaterialIndex)
+	{
+		UMaterialInterface* BaseMaterial = LoadObject<UMaterialInterface>(nullptr, MaterialPaths[MaterialIndex]);
+		if (!BaseMaterial)
+		{
+			continue;
+		}
+
+		UMaterialInstanceDynamic* DynamicMaterial = UMaterialInstanceDynamic::Create(BaseMaterial, this);
+		DynamicMaterial->SetVectorParameterValue(TEXT("ArmorTint"), FLinearColor(0.025f, 0.045f, 0.075f, 1.0f));
+		DynamicMaterial->SetVectorParameterValue(TEXT("CodeColor"), FLinearColor(0.0f, 0.72f, 1.0f, 1.0f));
+		DynamicMaterial->SetScalarParameterValue(TEXT("GlowStrength"), 1.8f);
+		BodyMesh->SetMaterial(MaterialIndex, DynamicMaterial);
+		HendelMaterials.Add(DynamicMaterial);
+	}
+}
+
+void AExceptionCharacter::UpdateHendelAppearance()
+{
+	if (HendelMaterials.IsEmpty())
+	{
+		return;
+	}
+
+	const float HPRatio = MaxHP > KINDA_SMALL_NUMBER ? CurrentHP / MaxHP : 1.0f;
+	float GlowStrength = 1.8f;
+	if (CombatState == EBRPlayerCombatState::Execution)
+	{
+		GlowStrength = 5.5f;
+	}
+	else if (HPRatio <= 0.3f && GetWorld())
+	{
+		const float Flicker = 0.5f + 0.5f * FMath::Sin(GetWorld()->GetTimeSeconds() * 17.0f);
+		GlowStrength = FMath::Lerp(0.55f, 2.8f, Flicker);
+	}
+
+	for (UMaterialInstanceDynamic* DynamicMaterial : HendelMaterials)
+	{
+		if (DynamicMaterial)
+		{
+			DynamicMaterial->SetScalarParameterValue(TEXT("GlowStrength"), GlowStrength);
+		}
+	}
 }
 
 void AExceptionCharacter::PlayRootAnim(bool bHeavy)
 {
 	UAnimSequence* Anim = bHeavy ? RootHeavyAnim.Get() : RootLightAnim.Get();
+	PlayAttackSequence(Anim, bHeavy ? HeavyAttackMontage.Get() : LightAttackMontage.Get(), bHeavy ? 2.1f : 1.9f);
+}
+
+void AExceptionCharacter::PlayAttackSequence(UAnimSequence* Anim, UAnimMontage* FallbackMontage, float Rate)
+{
 	UAnimInstance* AnimBP = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
 	if (!Anim || !AnimBP)
 	{
-		PlayOptionalMontage(bHeavy ? HeavyAttackMontage : LightAttackMontage);
+		PlayOptionalMontage(FallbackMontage);
 		return;
 	}
 
-	const float Rate = bHeavy ? 2.1f : 1.9f;
-	AnimBP->PlaySlotAnimationAsDynamicMontage(Anim, TEXT("DefaultSlot"), 0.08f, 0.12f, Rate, 1, -1.0f, 0.0f);
+	AnimBP->PlaySlotAnimationAsDynamicMontage(Anim, TEXT("DefaultSlot"), 0.06f, 0.10f, FMath::Max(0.1f, Rate), 1, -1.0f, 0.0f);
 }
 
 void AExceptionCharacter::SetRootWeapon(bool bOn)
@@ -276,9 +413,23 @@ void AExceptionCharacter::PlayHitSfx()
 	UGameplayStatics::PlaySoundAtLocation(this, Sfx, GetActorLocation() + GetActorForwardVector() * AttackTraceDistance, AttackVol * 0.9f);
 }
 
+void AExceptionCharacter::PlayHealSfx()
+{
+	USoundWaveProcedural* Sfx = MakePlayerSfx(this, EPlayerSfx::Heal);
+	UGameplayStatics::PlaySoundAtLocation(this, Sfx, GetActorLocation() + FVector(0.0f, 0.0f, 80.0f), 0.72f);
+}
+
 void AExceptionCharacter::BeginPlay()
 {
 	Super::BeginPlay();
+	ApplyHendelAppearance();
+	BaseMeshRelativeLocation = GetMesh()->GetRelativeLocation();
+	BaseMeshRelativeRotation = GetMesh()->GetRelativeRotation();
+	if (RuntimeFlask)
+	{
+		FlaskBaseLocation = RuntimeFlask->GetRelativeLocation();
+		FlaskBaseRotation = RuntimeFlask->GetRelativeRotation();
+	}
 	SaveBaseStats();
 
 	if (InventoryComponent)

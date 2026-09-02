@@ -81,6 +81,27 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Arena|Intro")
 	bool bHideBossStatusUntilIntroFinished = false;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Arena|Story")
+	FText BossStoryTitle;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Arena|Story", meta=(MultiLine="true"))
+	FText BossIntroLine;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Arena|Story", meta=(MultiLine="true"))
+	FText BossDefeatLog;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Arena|Story")
+	FName BossStoryId = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Arena|Story")
+	TArray<FName> RequiredBossStoryIds;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Arena|Story")
+	bool bBlockArenaUntilStoryReady = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Arena|Story", meta=(MultiLine="true"))
+	FText StoryLockedLine;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Arena", meta=(ClampMin="0.0", Units="cm"))
 	float AutoBossSearchRadius = 5000.0f;
 
@@ -127,4 +148,6 @@ protected:
 	UBRBossStatusWidget* ShowBossStatusWidget();
 	void RefreshBossStatusWidget();
 	void HideBossStatusWidget();
+	void ShowBossStoryIntro();
+	bool IsStoryReadyToStart() const;
 };

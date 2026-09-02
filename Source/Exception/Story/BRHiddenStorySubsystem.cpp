@@ -117,10 +117,57 @@ TArray<FName> UBRHiddenStorySubsystem::GetCompletedNelRequestIds() const
 	return RequestIds;
 }
 
-void UBRHiddenStorySubsystem::ApplySavedHiddenStoryState(const TArray<FName>& RegisteredRequests, const TArray<FName>& CompletedRequests, int32 SavedHiddenFragmentCount, bool bSavedMimikatzUnlocked, bool bSavedHiddenEndingEligible, EBRRuntimeEnding SavedLastEnding)
+void UBRHiddenStorySubsystem::MarkMainBossDefeated(FName BossId)
+{
+	if (BossId.IsNone() || DefeatedMainBossIds.Contains(BossId))
+	{
+		return;
+	}
+
+	DefeatedMainBossIds.Add(BossId);
+	OnMainBossProgressChanged.Broadcast(BossId, DefeatedMainBossIds.Num());
+}
+
+bool UBRHiddenStorySubsystem::IsMainBossDefeated(FName BossId) const
+{
+	return !BossId.IsNone() && DefeatedMainBossIds.Contains(BossId);
+}
+
+bool UBRHiddenStorySubsystem::AreRequiredBossesDefeated(const TArray<FName>& BossIds) const
+{
+	for (const FName& BossId : BossIds)
+	{
+		if (!IsMainBossDefeated(BossId))
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+bool UBRHiddenStorySubsystem::IsThreeBossArcComplete() const
+{
+	return IsMainBossDefeated(TEXT("SerpentPython"))
+		&& IsMainBossDefeated(TEXT("VritraPerl"))
+		&& IsMainBossDefeated(TEXT("CMDFinal"));
+}
+
+TArray<FName> UBRHiddenStorySubsystem::GetDefeatedMainBossIds() const
+{
+	TArray<FName> Result;
+	Result.Reserve(DefeatedMainBossIds.Num());
+	for (const FName& BossId : DefeatedMainBossIds)
+	{
+		Result.Add(BossId);
+	}
+	return Result;
+}
+
+void UBRHiddenStorySubsystem::ApplySavedHiddenStoryState(const TArray<FName>& RegisteredRequests, const TArray<FName>& CompletedRequests, int32 SavedHiddenFragmentCount, bool bSavedMimikatzUnlocked, bool bSavedHiddenEndingEligible, EBRRuntimeEnding SavedLastEnding, const TArray<FName>& SavedDefeatedBossIds)
 {
 	RegisteredNelRequests.Reset();
 	CompletedNelRequests.Reset();
+	DefeatedMainBossIds.Reset();
 
 	for (const FName& RequestId : RegisteredRequests)
 	{
@@ -145,19 +192,29 @@ void UBRHiddenStorySubsystem::ApplySavedHiddenStoryState(const TArray<FName>& Re
 	bMimikatzAuthoritySeizedUnlocked = bSavedMimikatzUnlocked;
 	bHiddenEndingEligible = bSavedHiddenEndingEligible;
 	LastResolvedEnding = SavedLastEnding;
+	for (const FName& BossId : SavedDefeatedBossIds)
+	{
+		if (!BossId.IsNone())
+		{
+			DefeatedMainBossIds.Add(BossId);
+		}
+	}
 	RefreshHiddenEligibility();
+	OnMainBossProgressChanged.Broadcast(NAME_None, DefeatedMainBossIds.Num());
 }
 
 void UBRHiddenStorySubsystem::ResetHiddenStoryState()
 {
 	RegisteredNelRequests.Reset();
 	CompletedNelRequests.Reset();
+	DefeatedMainBossIds.Reset();
 	RegisterDefaultNelHiddenRequests();
 	HiddenFragmentCount = 0;
 	bMimikatzAuthoritySeizedUnlocked = false;
 	bHiddenEndingEligible = false;
 	LastResolvedEnding = EBRRuntimeEnding::None;
 	OnHiddenFragmentChanged.Broadcast(HiddenFragmentCount, RequiredHiddenFragmentCount);
+	OnMainBossProgressChanged.Broadcast(NAME_None, 0);
 }
 
 void UBRHiddenStorySubsystem::RefreshHiddenEligibility()

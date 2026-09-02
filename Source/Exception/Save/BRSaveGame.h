@@ -13,7 +13,7 @@ class EXCEPTION_API UBRSaveGame : public USaveGame
 
 public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Save")
-	int32 SaveVersion = 1;
+	int32 SaveVersion = 3;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Save")
 	FName SavedLevelName = NAME_None;
@@ -56,6 +56,9 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Save")
 	TArray<FName> DefeatedBossIds;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Save")
+	TArray<FName> UnlockedMapRegionIds;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Exception|Save")
 	TArray<FBRInventorySlot> InventorySlots;

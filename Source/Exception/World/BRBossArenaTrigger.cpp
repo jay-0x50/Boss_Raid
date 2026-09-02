@@ -2,6 +2,9 @@
 
 #include "Boss/Base/BRBossBase.h"
 #include "Boss/Team/BRBossTeamCoordinator.h"
+#include "BRNarrativeQueueSubsystem.h"
+#include "BRHiddenStorySubsystem.h"
+#include "BRSaveGameSubsystem.h"
 #include "BRBossStatusWidget.h"
 #include "Player/Character/ExceptionCharacter.h"
 #include "ExceptionGameMode.h"
@@ -9,6 +12,7 @@
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/Engine.h"
+#include "Engine/GameInstance.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "Kismet/GameplayStatics.h"
@@ -130,8 +134,23 @@ void ABRBossArenaTrigger::StartArena()
 	{
 		return;
 	}
+	if (!IsStoryReadyToStart())
+	{
+		if (UGameInstance* GI = GetGameInstance())
+		{
+			if (UBRNarrativeQueueSubsystem* StoryQueue = GI->GetSubsystem<UBRNarrativeQueueSubsystem>())
+			{
+				const FText LockedText = StoryLockedLine.IsEmpty()
+					? FText::FromString(TEXT("아직 두 봉인의 종료 로그가 모이지 않았어. Python과 Perl 구역부터 확인해 줘."))
+					: StoryLockedLine;
+				StoryQueue->ShowNelLine(LockedText, false, 4.5f);
+			}
+		}
+		return;
+	}
 
 	bArenaStarted = true;
+	ShowBossStoryIntro();
 
 	if (AExceptionGameMode* ExceptionGameMode = GetWorld() ? GetWorld()->GetAuthGameMode<AExceptionGameMode>() : nullptr)
 	{
@@ -347,6 +366,28 @@ void ABRBossArenaTrigger::HandleBossDefeated()
 	GetWorldTimerManager().ClearTimer(BossIntroTimerHandle);
 	HideBossStatusWidget();
 
+	if (!BossStoryId.IsNone())
+	{
+		if (UGameInstance* GI = GetGameInstance())
+		{
+			if (UBRHiddenStorySubsystem* Story = GI->GetSubsystem<UBRHiddenStorySubsystem>())
+			{
+				Story->MarkMainBossDefeated(BossStoryId);
+			}
+		}
+
+		GetWorldTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this]()
+		{
+			if (UGameInstance* GI = GetGameInstance())
+			{
+				if (UBRSaveGameSubsystem* SaveSubsystem = GI->GetSubsystem<UBRSaveGameSubsystem>())
+				{
+					SaveSubsystem->SaveCurrentGame();
+				}
+			}
+		}));
+	}
+
 	TArray<ABRBossBase*> ManagedBosses;
 	BuildManagedBossList(ManagedBosses);
 	for (ABRBossBase* Boss : ManagedBosses)
@@ -373,6 +414,45 @@ void ABRBossArenaTrigger::HandleBossDefeated()
 	{
 		GEngine->AddOnScreenDebugMessage(4002, 3.0f, FColor::Green, TEXT("Boss Defeated - Path Opened"));
 	}
+
+	if (!BossDefeatLog.IsEmpty())
+	{
+		if (UGameInstance* GI = GetGameInstance())
+		{
+			if (UBRNarrativeQueueSubsystem* StoryQueue = GI->GetSubsystem<UBRNarrativeQueueSubsystem>())
+			{
+				StoryQueue->ShowBossLine(BossStoryTitle, BossDefeatLog, 5.5f);
+			}
+		}
+	}
+}
+
+void ABRBossArenaTrigger::ShowBossStoryIntro()
+{
+	if (BossIntroLine.IsEmpty())
+	{
+		return;
+	}
+
+	if (UGameInstance* GI = GetGameInstance())
+	{
+		if (UBRNarrativeQueueSubsystem* StoryQueue = GI->GetSubsystem<UBRNarrativeQueueSubsystem>())
+		{
+			StoryQueue->ShowBossLine(BossStoryTitle, BossIntroLine, FMath::Max(3.0f, BossIntroDelay + 2.0f));
+		}
+	}
+}
+
+bool ABRBossArenaTrigger::IsStoryReadyToStart() const
+{
+	if (!bBlockArenaUntilStoryReady || RequiredBossStoryIds.IsEmpty())
+	{
+		return true;
+	}
+
+	UGameInstance* GI = GetGameInstance();
+	const UBRHiddenStorySubsystem* Story = GI ? GI->GetSubsystem<UBRHiddenStorySubsystem>() : nullptr;
+	return Story && Story->AreRequiredBossesDefeated(RequiredBossStoryIds);
 }
 
 void ABRBossArenaTrigger::HandleBossStatChanged(float CurrentValue, float MaxValue, float NormalizedValue)

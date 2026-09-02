@@ -1,6 +1,7 @@
 #include "Boss/Final/BRCMDBoss.h"
 
 #include "BRHiddenStorySubsystem.h"
+#include "BRNarrativeQueueSubsystem.h"
 #include "Player/Character/ExceptionCharacter.h"
 #include "Engine/Engine.h"
 
@@ -52,6 +53,36 @@ void ABRCMDBoss::OnBossDeadInternal()
 	const AExceptionCharacter* RewardCharacter = Cast<AExceptionCharacter>(LastDamageCauser);
 	const bool bDefeatedWithMimikatz = RewardCharacter && RewardCharacter->HasInventoryItem(TEXT("Weapon_MimikatzAuthoritySeized"));
 	const EBRRuntimeEnding Ending = HiddenStory->ResolveCMDEnding(bDefeatedWithMimikatz);
+	const bool bThreeBossArcComplete = HiddenStory->IsThreeBossArcComplete();
+	if (UBRNarrativeQueueSubsystem* StoryQueue = GameInstance->GetSubsystem<UBRNarrativeQueueSubsystem>())
+	{
+		if (Ending == EBRRuntimeEnding::HiddenAuthoritySeized)
+		{
+			StoryQueue->ShowSystemLog(
+				FText::FromString(TEXT("> PROCESS: CMD — TERMINATED\n> WEAPON: MIMIKATZ — AUTHORITY SEIZED\n> DELETE HANDLER: FAILED\n> ROOT AUTHORITY: HENDEL\n> RUNTIME STATUS: STABILIZED\n> SPAWN FALLBACK_HANDLER.exe")),
+				8.0f,
+				FText::FromString(TEXT("ENDING // AUTHORITY SEIZED")));
+			StoryQueue->ShowEnding(
+				FText::FromString(TEXT("UNHANDLED HENDEL")),
+				FText::FromString(TEXT("세 개의 봉인은 닫혔다.\nHendel은 CMD가 움켜쥐려던 root authority를 먼저 빼앗아 자신의 종료 조건을 덮어썼다.\n\nThe Runtime은 안정되었지만, 마지막 명령 하나가 어둠 속에서 다시 실행된다.\n> SPAWN FALLBACK_HANDLER.exe")),
+				true,
+				12.5f);
+		}
+		else
+		{
+			StoryQueue->ShowSystemLog(
+				FText::FromString(TEXT("> PROCESS: CMD — TERMINATED\n> RUNTIME STATUS: STABILIZED\n> HANDLER: HENDEL — TASK COMPLETE")),
+				6.5f,
+				FText::FromString(TEXT("ENDING // TASK COMPLETE")));
+			StoryQueue->ShowEnding(
+				FText::FromString(bThreeBossArcComplete ? TEXT("COMMAND TERMINATED") : TEXT("INCOMPLETE TERMINATION")),
+				FText::FromString(bThreeBossArcComplete
+					? TEXT("Serpent.py의 봉인, Vritra의 사막, 그리고 최초의 명령 CMD까지 모두 멎었다.\n\nHendel의 task는 완료되었다. 그의 형체는 빛 속으로 흩어지지만, Nel은 빈 참조 너머에서 마지막 이름을 기억한다.\n\n> THE RUNTIME CONTINUES")
+					: TEXT("최종 명령은 멎었지만 앞선 봉인의 기록이 완전하지 않다.\n> STORY STATE: INCOMPLETE")),
+				false,
+				11.5f);
+		}
+	}
 
 	if (GEngine)
 	{

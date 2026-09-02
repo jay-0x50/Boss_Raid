@@ -6,6 +6,7 @@
 #include "BRInventoryWidget.h"
 #include "BRPauseMenuWidget.h"
 #include "BRPlayerHUDWidget.h"
+#include "BRWorldMapWidget.h"
 #include "Blueprint/UserWidget.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
@@ -29,6 +30,7 @@ AExceptionPlayerController::AExceptionPlayerController()
 
 	PauseMenuWidgetClass = UBRPauseMenuWidget::StaticClass();
 	InventoryWidgetClass = UBRInventoryWidget::StaticClass();
+	WorldMapWidgetClass = UBRWorldMapWidget::StaticClass();
 }
 
 void AExceptionPlayerController::BeginPlay()
@@ -45,6 +47,7 @@ void AExceptionPlayerController::BeginPlay()
 		bShowMouseCursor = false;
 		SetInputMode(FInputModeGameOnly());
 		ShowPlayerHUDWidget();
+		ShowWorldMapWidget();
 		BindPlayerHUDToPawn();
 		BindInventoryWidgetToPawn();
 	}
@@ -81,6 +84,12 @@ void AExceptionPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReaso
 	{
 		PauseMenuWidget->RemoveFromParent();
 		PauseMenuWidget = nullptr;
+	}
+
+	if (WorldMapWidget)
+	{
+		WorldMapWidget->RemoveFromParent();
+		WorldMapWidget = nullptr;
 	}
 
 	if (TitleMenuWidget)
@@ -122,6 +131,8 @@ void AExceptionPlayerController::SetupInputComponent()
 		PauseBinding.bExecuteWhenPaused = true;
 		FInputKeyBinding& InventoryBinding = InputComponent->BindKey(EKeys::I, IE_Pressed, this, &AExceptionPlayerController::ToggleInventoryWidget);
 		InventoryBinding.bExecuteWhenPaused = true;
+		FInputKeyBinding& MapBinding = InputComponent->BindKey(EKeys::M, IE_Pressed, this, &AExceptionPlayerController::ToggleWorldMapWidget);
+		MapBinding.bExecuteWhenPaused = true;
 		InputComponent->BindKey(EKeys::Q, IE_Pressed, this, &AExceptionPlayerController::UseHotbarSlotQ);
 		InputComponent->BindKey(EKeys::E, IE_Pressed, this, &AExceptionPlayerController::UseHotbarSlotE);
 		InputComponent->BindKey(EKeys::R, IE_Pressed, this, &AExceptionPlayerController::UseHotbarSlotR);

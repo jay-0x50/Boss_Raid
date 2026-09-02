@@ -11,6 +11,7 @@ class UInputMappingContext;
 class UUserWidget;
 class UBRBossStatusWidget;
 class UBRInventoryComponent;
+class UBRWorldMapWidget;
 class AExceptionCharacter;
 
 /**
@@ -66,6 +67,18 @@ public:
 
 	UFUNCTION(BlueprintPure, Category="Exception|Inventory")
 	bool IsInventoryOpen() const;
+
+	UFUNCTION(BlueprintCallable, Category="Exception|Map")
+	UBRWorldMapWidget* ShowWorldMapWidget();
+
+	UFUNCTION(BlueprintCallable, Category="Exception|Map")
+	void HideWorldMapWidget();
+
+	UFUNCTION(BlueprintCallable, Category="Exception|Map")
+	void ToggleWorldMapWidget();
+
+	UFUNCTION(BlueprintPure, Category="Exception|Map")
+	bool IsWorldMapOpen() const;
 
 	UFUNCTION(BlueprintCallable, Category="Exception|Menu")
 	bool SaveGameFromPauseMenu();
@@ -141,6 +154,12 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<UUserWidget> InventoryWidget;
+
+	UPROPERTY(EditAnywhere, Category="Exception|Map")
+	TSubclassOf<UBRWorldMapWidget> WorldMapWidgetClass;
+
+	UPROPERTY()
+	TObjectPtr<UBRWorldMapWidget> WorldMapWidget;
 
 	UPROPERTY(EditAnywhere, Category="Exception|Menu")
 	FName TitleLevelName = TEXT("L_Title");

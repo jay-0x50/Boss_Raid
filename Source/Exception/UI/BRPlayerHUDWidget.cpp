@@ -121,7 +121,7 @@ void UBRPlayerHUDWidget::BuildHUDWidget()
 	ShortcutBox->AddChildToVerticalBox(ShortcutTitle);
 
 	UTextBlock* MenuHintText = WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass(), TEXT("MenuHintText"));
-	MenuHintText->SetText(FText::FromString(TEXT("[I] Inventory   [ESC] Settings")));
+	MenuHintText->SetText(FText::FromString(TEXT("[M] Map   [I] Inventory   [ESC] Settings")));
 	MenuHintText->SetColorAndOpacity(FSlateColor(FLinearColor(0.9f, 0.86f, 0.76f, 1.0f)));
 	MenuHintText->SetFont(FSlateFontInfo(FCoreStyle::GetDefaultFont(), 12));
 	if (UVerticalBoxSlot* HintSlot = ShortcutBox->AddChildToVerticalBox(MenuHintText))

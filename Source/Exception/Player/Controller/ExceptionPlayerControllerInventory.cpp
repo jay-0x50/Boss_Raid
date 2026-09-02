@@ -107,6 +107,11 @@ UUserWidget* AExceptionPlayerController::ShowInventoryWidget()
 		InventoryWidget = CreateWidget<UUserWidget>(this, InventoryWidgetClass);
 	}
 
+	if (IsWorldMapOpen())
+	{
+		HideWorldMapWidget();
+	}
+
 	if (!InventoryWidget)
 	{
 		return nullptr;

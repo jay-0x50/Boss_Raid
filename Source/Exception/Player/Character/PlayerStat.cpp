@@ -6,9 +6,12 @@
 #include "BRHiddenStorySubsystem.h"
 #include "BRPlayerGraveMarker.h"
 #include "ExceptionGameMode.h"
+#include "Components/PointLightComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "Engine/Engine.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "TimerManager.h"
 
 bool AExceptionCharacter::SpendStamina(float Amount)
 {
@@ -371,12 +374,11 @@ bool AExceptionCharacter::TryUseInventoryItem(int32 SlotIndex, const FBRInventor
 	switch (Slot.Item.Effect)
 	{
 	case EBRInventoryItemEffect::HealHP:
-		if (CombatState == EBRPlayerCombatState::Dead || CurrentHP >= MaxHP)
+		if (CombatState != EBRPlayerCombatState::Idle || CurrentHP >= MaxHP)
 		{
 			return false;
 		}
-		HealHP(Slot.Item.EffectValue);
-		return true;
+		return BeginFlaskHeal(Slot.Item.EffectValue);
 	case EBRInventoryItemEffect::RestoreStamina:
 		if (CombatState == EBRPlayerCombatState::Dead || CurrentStamina >= MaxStamina)
 		{
@@ -411,8 +413,8 @@ FBRInventoryItemDefinition AExceptionCharacter::MakePotionItem() const
 {
 	FBRInventoryItemDefinition Item;
 	Item.ItemId = TEXT("Potion_RuntimeFlask");
-	Item.DisplayName = FText::FromString(TEXT("Runtime Flask"));
-	Item.Description = FText::FromString(TEXT("Restores HP. A small patch of stable runtime memory."));
+	Item.DisplayName = FText::FromString(TEXT("Runtime Chalice"));
+	Item.Description = FText::FromString(TEXT("A silver-blue chalice holding stable Runtime memory. Restores HP after a committed drink."));
 	Item.Category = EBRInventoryItemCategory::Consumable;
 	Item.MaxStack = 9;
 	Item.bUsable = true;
@@ -420,6 +422,101 @@ FBRInventoryItemDefinition AExceptionCharacter::MakePotionItem() const
 	Item.Effect = EBRInventoryItemEffect::HealHP;
 	Item.EffectValue = 300.0f;
 	return Item;
+}
+
+bool AExceptionCharacter::BeginFlaskHeal(float HealAmount)
+{
+	if (!CanStartCombatAction() || HealAmount <= 0.0f || CurrentHP >= MaxHP || !RuntimeFlask)
+	{
+		return false;
+	}
+
+	StopSprint();
+	SetCombatState(EBRPlayerCombatState::Healing);
+	PendingHealAmount = HealAmount;
+	HealNow = 0.0f;
+	bHealApplied = false;
+	RuntimeFlask->SetHiddenInGame(false);
+	RuntimeFlask->SetRelativeLocation(FlaskBaseLocation);
+	RuntimeFlask->SetRelativeRotation(FlaskBaseRotation);
+	if (FlaskAura)
+	{
+		FlaskAura->SetIntensity(240.0f);
+	}
+
+	PlayOptionalMontage(HealMontage);
+	GetWorldTimerManager().SetTimer(FlaskHealTimerHandle, this, &AExceptionCharacter::ApplyFlaskHeal, FlaskHealDelay, false);
+	GetWorldTimerManager().SetTimer(StateTimerHandle, this, &AExceptionCharacter::FinishFlaskHeal, FlaskUseTime, false);
+	UE_LOG(LogTemplateCharacter, Log, TEXT("Runtime Chalice: drink started, heal in %.2fs"), FlaskHealDelay);
+	return true;
+}
+
+void AExceptionCharacter::ApplyFlaskHeal()
+{
+	if (CombatState != EBRPlayerCombatState::Healing || bHealApplied)
+	{
+		return;
+	}
+
+	bHealApplied = true;
+	HealHP(PendingHealAmount);
+	PlayHealSfx();
+	if (FlaskAura)
+	{
+		FlaskAura->SetIntensity(2600.0f);
+	}
+	UE_LOG(LogTemplateCharacter, Log, TEXT("Runtime Chalice: +%.0f HP"), PendingHealAmount);
+}
+
+void AExceptionCharacter::FinishFlaskHeal()
+{
+	if (CombatState != EBRPlayerCombatState::Healing)
+	{
+		return;
+	}
+
+	PendingHealAmount = 0.0f;
+	SetCombatState(EBRPlayerCombatState::Idle);
+}
+
+void AExceptionCharacter::UpdateFlaskHeal(float DeltaSeconds)
+{
+	if (CombatState != EBRPlayerCombatState::Healing || !RuntimeFlask)
+	{
+		return;
+	}
+
+	HealNow += DeltaSeconds;
+	const float Alpha = FMath::Clamp(HealNow / FMath::Max(FlaskUseTime, KINDA_SMALL_NUMBER), 0.0f, 1.0f);
+	const float LiftIn = FMath::SmoothStep(0.0f, 0.36f, Alpha);
+	const float LiftOut = 1.0f - FMath::SmoothStep(0.72f, 1.0f, Alpha);
+	const float Lift = FMath::Min(LiftIn, LiftOut);
+	RuntimeFlask->SetRelativeLocation(FlaskBaseLocation + FVector(4.0f, -3.0f, 18.0f) * Lift);
+	RuntimeFlask->SetRelativeRotation(FlaskBaseRotation + FRotator(-72.0f * Lift, 8.0f * Lift, 18.0f * Lift));
+	if (FlaskAura)
+	{
+		const float Pulse = 0.78f + 0.22f * FMath::Sin(HealNow * 18.0f);
+		const float BaseIntensity = bHealApplied ? 2100.0f : 320.0f + 920.0f * Lift;
+		FlaskAura->SetIntensity(BaseIntensity * Pulse);
+	}
+}
+
+void AExceptionCharacter::CancelFlaskHeal()
+{
+	GetWorldTimerManager().ClearTimer(FlaskHealTimerHandle);
+	HealNow = 0.0f;
+	PendingHealAmount = 0.0f;
+	bHealApplied = false;
+	if (RuntimeFlask)
+	{
+		RuntimeFlask->SetHiddenInGame(true);
+		RuntimeFlask->SetRelativeLocation(FlaskBaseLocation);
+		RuntimeFlask->SetRelativeRotation(FlaskBaseRotation);
+	}
+	if (FlaskAura)
+	{
+		FlaskAura->SetIntensity(0.0f);
+	}
 }
 
 FBRInventoryItemDefinition AExceptionCharacter::MakeStaminaItem() const
