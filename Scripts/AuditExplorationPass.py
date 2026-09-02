@@ -5,6 +5,25 @@ import unreal
 
 MAP_PATH = "/Game/Maps/L_Runtime_Field"
 CLEAN_BOULDER = "/Game/ThirdParty/BossEnvironment/PolyHavenLOD/Boulder01/boulder_01_LOD1"
+TERRAIN_ASSETS = {
+    "Field1": "/Game/World/Environment/Terrain/SM_OpenField_Field1",
+    "Field2": "/Game/World/Environment/Terrain/SM_OpenField_Field2",
+    "Field3": "/Game/World/Environment/Terrain/SM_OpenField_Field3",
+}
+ROUTE_POINTS = {
+    "Field1": [
+        (1200.0, 0.0), (2050.0, 250.0), (2520.0, 1050.0), (2920.0, 1880.0),
+        (2600.0, 2750.0), (3040.0, 3650.0), (2420.0, 4480.0), (1820.0, 5200.0),
+    ],
+    "Field2": [
+        (6460.0, 5200.0), (7140.0, 4240.0), (7300.0, 2750.0), (6620.0, 1120.0),
+        (5480.0, -720.0), (4300.0, -2500.0), (3000.0, -4140.0), (1820.0, -5200.0),
+    ],
+    "Field3": [
+        (6460.0, -5200.0), (7800.0, -4380.0), (9020.0, -3120.0),
+        (10100.0, -1820.0), (11220.0, -760.0), (12320.0, 0.0),
+    ],
+}
 
 
 def fail(message):
@@ -24,6 +43,20 @@ def distance_2d(a, b):
     return math.hypot(la.x - lb.x, la.y - lb.y)
 
 
+def distance_to_route(route, location):
+    nearest = float("inf")
+    for start, end in zip(ROUTE_POINTS[route], ROUTE_POINTS[route][1:]):
+        dx, dy = end[0] - start[0], end[1] - start[1]
+        length_squared = dx * dx + dy * dy
+        alpha = 0.0 if length_squared <= 1.0 else max(
+            0.0,
+            min(1.0, ((location.x - start[0]) * dx + (location.y - start[1]) * dy) / length_squared),
+        )
+        nearest_x, nearest_y = start[0] + dx * alpha, start[1] + dy * alpha
+        nearest = min(nearest, math.hypot(location.x - nearest_x, location.y - nearest_y))
+    return nearest
+
+
 def main():
     if not unreal.EditorLoadingAndSavingUtils.load_map(MAP_PATH):
         fail(f"Could not load {MAP_PATH}")
@@ -32,8 +65,8 @@ def main():
     actors = list(subsystem.get_all_level_actors())
     by_label = {actor.get_actor_label(): actor for actor in actors}
     explore = [actor for actor in actors if actor.get_actor_label().startswith("Explore_")]
-    paths = [actor for actor in explore if actor.get_actor_label().startswith("Explore_Path_")]
-    cliffs = [actor for actor in explore if actor.get_actor_label().startswith("Explore_Cliff_")]
+    terrain = [actor for actor in explore if actor.get_actor_label().startswith("Explore_Terrain_")]
+    rocks = [actor for actor in explore if actor.get_actor_label().startswith("Explore_Rock_")]
     landmarks = [actor for actor in explore if actor.get_actor_label().startswith("Explore_Landmark_")]
     seals = [actor for actor in explore if actor.get_actor_label().startswith("Explore_SQLSeal_")]
     lore = [actor for actor in explore if actor.get_actor_label().startswith("Explore_Lore_")]
@@ -44,12 +77,12 @@ def main():
     map_fragments = [actor for actor in explore if actor.get_class().get_name() == "BRMapFragmentPickup"]
 
     expected = {
-        "explore": 268, "paths": 59, "cliffs": 110, "landmarks": 25,
+        "explore": 131, "terrain": 3, "rocks": 29, "landmarks": 25,
         "seals": 3, "lore": 5, "encounters": 49, "spawners": 7,
         "gates": 2, "checkpoints": 2, "map_fragments": 3,
     }
     actual = {
-        "explore": len(explore), "paths": len(paths), "cliffs": len(cliffs), "landmarks": len(landmarks),
+        "explore": len(explore), "terrain": len(terrain), "rocks": len(rocks), "landmarks": len(landmarks),
         "seals": len(seals), "lore": len(lore), "encounters": len(encounters), "spawners": len(spawners),
         "gates": len(gates), "checkpoints": len(checkpoints), "map_fragments": len(map_fragments),
     }
@@ -66,10 +99,14 @@ def main():
     if len(lore_ids) != len(set(lore_ids)):
         fail(f"Exploration lore beat ids are duplicated: {lore_ids}")
 
-    route_counts = {route: sum(a.get_actor_label().startswith(f"Explore_Path_{route}_") for a in paths)
-                    for route in ("Field1", "Field2", "Field3")}
-    if route_counts != {"Field1": 15, "Field2": 26, "Field3": 18}:
-        fail(f"Unexpected S-route piece counts: {route_counts}")
+    terrain_counts = {route: sum(a.get_actor_label() == f"Explore_Terrain_{route}" for a in terrain)
+                      for route in ("Field1", "Field2", "Field3")}
+    rock_counts = {route: sum(a.get_actor_label().startswith(f"Explore_Rock_{route}_") for a in rocks)
+                   for route in ("Field1", "Field2", "Field3")}
+    if terrain_counts != {"Field1": 1, "Field2": 1, "Field3": 1}:
+        fail(f"Unexpected open terrain actor counts: {terrain_counts}")
+    if rock_counts != {"Field1": 9, "Field2": 11, "Field3": 9}:
+        fail(f"Unexpected sparse outcrop counts: {rock_counts}")
 
     for label in (
         "Explore_Landmark_PythonRuin_Arch", "Explore_Landmark_PerlDescent_Arch",
@@ -192,31 +229,68 @@ def main():
                 and actor.get_actor_enable_collision():
             fail(f"Prototype blockout actor still blocks the S route: {label}")
 
+    legacy_corridors = [actor.get_actor_label() for actor in explore if actor.get_actor_label().startswith(
+        ("Explore_Path_", "Explore_Cliff_"))]
+    if legacy_corridors:
+        fail(f"Maze-like path or cliff corridor actors remain: {legacy_corridors[:8]}")
+
+    for route, expected_path in TERRAIN_ASSETS.items():
+        actor = by_label[f"Explore_Terrain_{route}"]
+        component = actor.get_component_by_class(unreal.StaticMeshComponent)
+        terrain_mesh = component.get_editor_property("static_mesh") if component else None
+        if object_path(terrain_mesh).split(".", 1)[0] != expected_path:
+            fail(f"{route} is not using its rolling terrain mesh: {object_path(terrain_mesh)}")
+        if not actor.get_actor_enable_collision():
+            fail(f"{route} rolling terrain has no collision")
+        tags = {str(tag) for tag in actor.get_editor_property("tags")}
+        if not {"OpenWorldTerrain", "RollingSurface"}.issubset(tags):
+            fail(f"{route} terrain is missing open-world surface tags: {tags}")
+        bounds = terrain_mesh.get_bounding_box()
+        spans = (bounds.max.x - bounds.min.x, bounds.max.y - bounds.min.y, bounds.max.z - bounds.min.z)
+        if min(spans[0], spans[1]) < 4000.0 or spans[2] < 1100.0:
+            fail(f"{route} terrain is too small or flat: spans={spans}")
+        if route == "Field1" and bounds.max.y < 6000.0:
+            fail(f"Field1 terrain was mirrored away from the Python approach: bounds={bounds}")
+        if route == "Field3" and (bounds.min.y > -6500.0 or bounds.max.y > 3500.0):
+            fail(f"Field3 terrain was mirrored away from the CMD approach: bounds={bounds}")
+        body_setup = terrain_mesh.get_editor_property("body_setup")
+        if body_setup.get_editor_property("collision_trace_flag") != unreal.CollisionTraceFlag.CTF_USE_COMPLEX_AS_SIMPLE:
+            fail(f"{route} terrain is not using complex surface collision")
+
     clean_mesh = unreal.load_asset(CLEAN_BOULDER)
     if not clean_mesh:
-        fail(f"Missing clean cliff mesh: {CLEAN_BOULDER}")
-    for actor in cliffs:
-        component = actor.get_component_by_class(unreal.StaticMeshComponent)
-        if not component or component.get_editor_property("static_mesh") != clean_mesh:
-            fail(f"Cliff actor is not using the verified Boulder LOD: {actor.get_actor_label()}")
-        if not actor.get_actor_enable_collision():
-            fail(f"Cliff actor has no collision: {actor.get_actor_label()}")
+        fail(f"Missing clean boulder mesh: {CLEAN_BOULDER}")
+    grounded_boulders = []
     for actor in explore:
         component = actor.get_component_by_class(unreal.StaticMeshComponent)
         used_mesh = component.get_editor_property("static_mesh") if component else None
         if used_mesh and "Mountainside" in used_mesh.get_path_name():
             fail(f"Ragged Mountainside mesh remains in managed world: {actor.get_actor_label()}")
+        if used_mesh == clean_mesh:
+            grounded_boulders.append(actor)
 
-    # Actor-center clearance catches accidental rocks or blockers dropped on the navigable strip.
-    nearest = min((distance_2d(path, cliff), path.get_actor_label(), cliff.get_actor_label())
-                  for path in paths for cliff in cliffs)
-    if nearest[0] < 750.0:
-        fail(f"Route center overlaps cliff geometry: distance={nearest[0]:.1f}, path={nearest[1]}, cliff={nearest[2]}")
-    landmark_collision = [actor for actor in landmarks if actor.get_actor_label().endswith(("_Ruin", "_WallL", "_WallR"))]
-    nearest_landmark = min((distance_2d(path, prop), path.get_actor_label(), prop.get_actor_label())
-                           for path in paths for prop in landmark_collision)
-    if nearest_landmark[0] < 250.0:
-        fail(f"Route center overlaps landmark collision: distance={nearest_landmark[0]:.1f}, path={nearest_landmark[1]}, prop={nearest_landmark[2]}")
+    if len(grounded_boulders) != 53:
+        fail(f"Unexpected grounded boulder count: {len(grounded_boulders)}")
+    for actor in grounded_boulders:
+        tags = [str(tag) for tag in actor.get_editor_property("tags")]
+        ground_tag = next((tag for tag in tags if tag.startswith("GroundZ_")), None)
+        if "GroundedRock" not in tags or not ground_tag:
+            fail(f"Boulder lacks grounding metadata: {actor.get_actor_label()}")
+        ground_z = float(ground_tag.removeprefix("GroundZ_"))
+        bounds_origin, bounds_extent = actor.get_actor_bounds(False)
+        bottom_delta = bounds_origin.z - bounds_extent.z - ground_z
+        if not -30.5 <= bottom_delta <= -12.0:
+            fail(f"Floating or over-buried boulder: {actor.get_actor_label()} delta={bottom_delta:.1f}")
+        if not actor.get_actor_enable_collision():
+            fail(f"Grounded boulder has no collision: {actor.get_actor_label()}")
+
+    nearest_outcrop = (float("inf"), "")
+    for actor in rocks:
+        route = actor.get_actor_label().split("_")[2]
+        distance = distance_to_route(route, actor.get_actor_location())
+        nearest_outcrop = min(nearest_outcrop, (distance, actor.get_actor_label()))
+    if nearest_outcrop[0] < 800.0:
+        fail(f"A sparse outcrop blocks the central traversal area: {nearest_outcrop}")
 
     hidden_positions = {
         "Story_HiddenFragment_2": (5230.0, -1620.0),
@@ -262,8 +336,8 @@ def main():
     if gameplay_controller_cdo.get_editor_property("world_map_widget_class") != map_widget_class:
         fail("Gameplay controller Blueprint did not inherit the world-map widget class")
 
-    log(f"PASS actors={len(actors)} managed={len(explore)} routes={route_counts} encounters=2/3/2 "
-        f"map_fragments=3 nearest_path_cliff={nearest[0]:.0f}cm nearest_landmark={nearest_landmark[0]:.0f}cm "
+    log(f"PASS actors={len(actors)} managed={len(explore)} terrain={terrain_counts} rocks={rock_counts} "
+        f"encounters=2/3/2 map_fragments=3 nearest_outcrop={nearest_outcrop[0]:.0f}cm "
         f"order=Python->Vritra->CMD")
 
 
