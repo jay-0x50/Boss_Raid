@@ -5,4 +5,5 @@ ABRAurathosBoss::ABRAurathosBoss()
 	bUseTeamSlotRole = false;
 	PythonBossIdentity = EBRPythonBossIdentity::Aurathos;
 	TeamRole = EBRBossTeamRole::Melee;
+	ConfigurePythonPatterns();
 }

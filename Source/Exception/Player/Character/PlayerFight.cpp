@@ -8,12 +8,50 @@
 #include "BRPlayerGraveMarker.h"
 #include "Boss/Base/BRBossBase.h"
 #include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
+#include "Animation/AnimSequenceBase.h"
 #include "Components/CapsuleComponent.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/DamageEvents.h"
 #include "Engine/Engine.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
+
+bool AExceptionCharacter::AnimationUsesWindow(const UAnimSequenceBase* Animation, EBRPlayerAnimWindow Window) const
+{
+	if (!Animation)
+	{
+		return false;
+	}
+
+	for (const FAnimNotifyEvent& NotifyEvent : Animation->Notifies)
+	{
+		const UBRPlayerAnimNotifyState* PlayerNotify = Cast<UBRPlayerAnimNotifyState>(NotifyEvent.NotifyStateClass);
+		if (PlayerNotify && PlayerNotify->Window == Window)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+bool AExceptionCharacter::AnimationUsesEvent(const UAnimSequenceBase* Animation, EBRPlayerAnimEvent Event) const
+{
+	if (!Animation)
+	{
+		return false;
+	}
+
+	for (const FAnimNotifyEvent& NotifyEvent : Animation->Notifies)
+	{
+		const UBRPlayerAnimNotify* PlayerNotify = Cast<UBRPlayerAnimNotify>(NotifyEvent.Notify);
+		if (PlayerNotify && PlayerNotify->Event == Event)
+		{
+			return true;
+		}
+	}
+	return false;
+}
 
 bool AExceptionCharacter::DoLightAttack()
 {
@@ -49,6 +87,10 @@ bool AExceptionCharacter::CanBufferLightComboInput() const
 	{
 		return false;
 	}
+	if (bComboWindowUsesNotify)
+	{
+		return bComboInputWindowActive;
+	}
 
 	const float RemainingTime = GetWorldTimerManager().GetTimerRemaining(StateTimerHandle);
 	if (RemainingTime < 0.0f)
@@ -66,6 +108,9 @@ bool AExceptionCharacter::StartLightComboStep()
 	EndAttackHitWindow();
 	DamagedActorsThisAttack.Reset();
 	bHitStopTriggeredThisAttack = false;
+	bComboWindowUsesNotify = false;
+	bComboInputWindowActive = false;
+	bRootMotionLocked = false;
 
 	if (!SpendStamina(LightAttackStaminaCost))
 	{
@@ -83,14 +128,29 @@ bool AExceptionCharacter::StartLightComboStep()
 	const float DamageRates[] = {1.0f, 1.12f, 1.35f};
 	const float GroggyRates[] = {1.0f, 1.15f, 1.45f};
 	const int32 TuneIndex = FMath::Clamp(LightComboIndex, 0, 2);
-	PlayAttackSequence(AttackAnim, LightAttackMontage.Get(), PlayRates[TuneIndex]);
-	StartRootSwing(false);
-	PlaySwingSfx(false);
-
 	PendingAttackDamage = LightAttackDamage * DamageRates[TuneIndex];
 	PendingAttackGroggyDamage = LightAttackGroggyDamage * GroggyRates[TuneIndex];
-	const float HitDelay = LightAttackHitDelay + static_cast<float>(TuneIndex) * 0.035f;
-	GetWorldTimerManager().SetTimer(AttackHitTimerHandle, this, &AExceptionCharacter::ApplyPendingAttackHit, HitDelay, false);
+	const bool bAnimationStarted = PlayAttackSequence(AttackAnim, LightAttackMontage.Get(), PlayRates[TuneIndex]);
+	StartRootSwing(false);
+
+	const bool bAttackWindowBeganDuringPlay = bAttackWindowUsesNotify;
+	const bool bComboWindowBeganDuringPlay = bComboWindowUsesNotify;
+	bAttackWindowUsesNotify = bAttackWindowBeganDuringPlay || (bAnimationStarted && AnimationUsesWindow(
+		AttackAnim ? static_cast<UAnimSequenceBase*>(AttackAnim) : static_cast<UAnimSequenceBase*>(LightAttackMontage.Get()),
+		EBRPlayerAnimWindow::AttackTrace));
+	bComboWindowUsesNotify = bComboWindowBeganDuringPlay || (bAnimationStarted && AnimationUsesWindow(
+		AttackAnim ? static_cast<UAnimSequenceBase*>(AttackAnim) : static_cast<UAnimSequenceBase*>(LightAttackMontage.Get()),
+		EBRPlayerAnimWindow::ComboInput));
+	if (!bComboWindowBeganDuringPlay)
+	{
+		bComboInputWindowActive = false;
+	}
+	if (!bAttackWindowUsesNotify)
+	{
+		const float HitDelay = LightAttackHitDelay + static_cast<float>(TuneIndex) * 0.035f;
+		GetWorldTimerManager().SetTimer(AttackHitTimerHandle, this, &AExceptionCharacter::ApplyPendingAttackHit, HitDelay, false);
+		HandleAnimationEvent(EBRPlayerAnimEvent::LightWeaponSwing);
+	}
 
 	CurrentLightAttackStepDuration = LightAttackDuration * DurationRates[TuneIndex];
 	GetWorldTimerManager().SetTimer(StateTimerHandle, this, &AExceptionCharacter::FinishLightComboStep, CurrentLightAttackStepDuration, false);
@@ -130,19 +190,29 @@ bool AExceptionCharacter::DoHeavyAttack()
 	EndAttackHitWindow();
 	DamagedActorsThisAttack.Reset();
 	bHitStopTriggeredThisAttack = false;
+	bComboWindowUsesNotify = false;
+	bComboInputWindowActive = false;
+	bRootMotionLocked = false;
 	const bool bAltHeavy = (HeavyVariationIndex++ % 2) == 1 && HeavyAltAnim != nullptr;
 	UAnimSequence* AttackAnim = bAltHeavy ? HeavyAltAnim.Get() : RootHeavyAnim.Get();
-	PlayAttackSequence(AttackAnim, HeavyAttackMontage.Get(), bAltHeavy ? 1.12f : 1.34f);
-	StartRootSwing(true);
-	PlaySwingSfx(true);
 	PendingAttackDamage = HeavyAttackDamage * (bAltHeavy ? 1.18f : 1.0f);
 	PendingAttackGroggyDamage = HeavyAttackGroggyDamage * (bAltHeavy ? 1.30f : 1.0f);
-	GetWorldTimerManager().SetTimer(
-		AttackHitTimerHandle,
-		this,
-		&AExceptionCharacter::ApplyPendingAttackHit,
-		HeavyAttackHitDelay * (bAltHeavy ? 1.20f : 1.0f),
-		false);
+	const bool bAnimationStarted = PlayAttackSequence(AttackAnim, HeavyAttackMontage.Get(), bAltHeavy ? 1.12f : 1.34f);
+	StartRootSwing(true);
+	const bool bAttackWindowBeganDuringPlay = bAttackWindowUsesNotify;
+	bAttackWindowUsesNotify = bAttackWindowBeganDuringPlay || (bAnimationStarted && AnimationUsesWindow(
+		AttackAnim ? static_cast<UAnimSequenceBase*>(AttackAnim) : static_cast<UAnimSequenceBase*>(HeavyAttackMontage.Get()),
+		EBRPlayerAnimWindow::AttackTrace));
+	if (!bAttackWindowUsesNotify)
+	{
+		GetWorldTimerManager().SetTimer(
+			AttackHitTimerHandle,
+			this,
+			&AExceptionCharacter::ApplyPendingAttackHit,
+			HeavyAttackHitDelay * (bAltHeavy ? 1.20f : 1.0f),
+			false);
+		HandleAnimationEvent(EBRPlayerAnimEvent::HeavyWeaponSwing);
+	}
 
 	GetWorldTimerManager().SetTimer(StateTimerHandle, this, &AExceptionCharacter::FinishCombatAction, HeavyAttackDuration * (bAltHeavy ? 1.22f : 1.0f), false);
 	return true;
@@ -186,11 +256,16 @@ void AExceptionCharacter::UpdateAttackHitWindow(float DeltaSeconds)
 		return;
 	}
 
-	AttackHitWindowRemaining -= DeltaSeconds;
-	if (AttackHitWindowRemaining <= 0.0f)
+	// Authored notify states own their exact end time. Legacy assets without the
+	// state continue to use the configured timer as a safe fallback.
+	if (!bAttackWindowUsesNotify)
 	{
-		EndAttackHitWindow();
-		return;
+		AttackHitWindowRemaining -= DeltaSeconds;
+		if (AttackHitWindowRemaining <= 0.0f)
+		{
+			EndAttackHitWindow();
+			return;
+		}
 	}
 
 	PerformAttackTrace(PendingAttackDamage, PendingAttackGroggyDamage);
@@ -209,6 +284,10 @@ void AExceptionCharacter::CancelAttackChain()
 	ClearHitStop();
 	DamagedActorsThisAttack.Reset();
 	bHitStopTriggeredThisAttack = false;
+	bAttackWindowUsesNotify = false;
+	bComboWindowUsesNotify = false;
+	bComboInputWindowActive = false;
+	bRootMotionLocked = false;
 	bLightComboQueued = false;
 	LightComboIndex = 0;
 	CurrentLightAttackStepDuration = 0.0f;
@@ -221,19 +300,60 @@ bool AExceptionCharacter::DoDodge()
 		return false;
 	}
 
-	SetCombatState(EBRPlayerCombatState::Dodge);
-	PlayOptionalMontage(DodgeMontage);
-	UE_LOG(LogTemplateCharacter, Log, TEXT("DodgeRoll: Invincible %.2fs / Roll %.2fs"), DodgeInvincibleDuration, DodgeDuration);
-
-	bIsInvincible = true;
 	const FVector DodgeDirection = GetLastMovementInputVector().IsNearlyZero()
 		? GetActorForwardVector()
 		: GetLastMovementInputVector().GetSafeNormal();
+	SetCombatState(EBRPlayerCombatState::Dodge);
+	UAnimMontage* ActiveDodgeMontage = SelectDodgeMontage(DodgeDirection);
+	const float DodgePlayRate = ActiveDodgeMontage && DodgeDuration > KINDA_SMALL_NUMBER
+		? ActiveDodgeMontage->GetPlayLength() / DodgeDuration
+		: 1.0f;
+	// Dodging is safe from the frame the action is accepted. A zero-time
+	// AnimNotifyState may not dispatch until the first animation update, so do
+	// not leave an input-to-notify vulnerability. The authored notify still owns
+	// the exact end; the legacy timer is retained only when no notify is present.
+	bIsInvincible = true;
+	bInvincibilityUsesNotify = false;
+	const bool bAnimationStarted = PlayOptionalMontage(ActiveDodgeMontage, DodgePlayRate);
+	const bool bWindowBeganDuringPlay = bInvincibilityUsesNotify;
+	bInvincibilityUsesNotify = bWindowBeganDuringPlay
+		|| (bAnimationStarted && AnimationUsesWindow(ActiveDodgeMontage, EBRPlayerAnimWindow::Invincibility));
+	HandleAnimationEvent(EBRPlayerAnimEvent::Dodge);
+	UE_LOG(LogTemplateCharacter, Log, TEXT("DodgeRoll: Invincible %.2fs / Roll %.2fs / Notify=%s"),
+		DodgeInvincibleDuration,
+		DodgeDuration,
+		bInvincibilityUsesNotify ? TEXT("true") : TEXT("false"));
+
 	StartDodgeRoll(DodgeDirection);
 
-	GetWorldTimerManager().SetTimer(InvincibleTimerHandle, this, &AExceptionCharacter::EndInvincibility, DodgeInvincibleDuration, false);
+	if (!bInvincibilityUsesNotify)
+	{
+		GetWorldTimerManager().SetTimer(InvincibleTimerHandle, this, &AExceptionCharacter::EndInvincibility, DodgeInvincibleDuration, false);
+	}
 	GetWorldTimerManager().SetTimer(StateTimerHandle, this, &AExceptionCharacter::FinishCombatAction, DodgeDuration, false);
 	return true;
+}
+
+UAnimMontage* AExceptionCharacter::SelectDodgeMontage(const FVector& WorldDirection) const
+{
+	if (!bIsLockedOn)
+	{
+		return DodgeForwardMontage ? DodgeForwardMontage.Get() : DodgeMontage.Get();
+	}
+
+	const FVector SafeDirection = WorldDirection.GetSafeNormal2D();
+	const float ForwardAmount = FVector::DotProduct(GetActorForwardVector().GetSafeNormal2D(), SafeDirection);
+	const float RightAmount = FVector::DotProduct(GetActorRightVector().GetSafeNormal2D(), SafeDirection);
+	UAnimMontage* DirectionalMontage = nullptr;
+	if (FMath::Abs(ForwardAmount) >= FMath::Abs(RightAmount))
+	{
+		DirectionalMontage = ForwardAmount >= 0.0f ? DodgeForwardMontage.Get() : DodgeBackMontage.Get();
+	}
+	else
+	{
+		DirectionalMontage = RightAmount >= 0.0f ? DodgeRightMontage.Get() : DodgeLeftMontage.Get();
+	}
+	return DirectionalMontage ? DirectionalMontage : DodgeMontage.Get();
 }
 
 void AExceptionCharacter::BeginSprintIfHeld()
@@ -295,7 +415,12 @@ void AExceptionCharacter::StartDodgeRoll(const FVector& Direction)
 		RollDirection = GetActorForwardVector().GetSafeNormal2D();
 	}
 
-	SetActorRotation(RollDirection.Rotation());
+	// Free movement turns into the roll. Lock-on keeps the target-facing yaw so
+	// the authored forward/back/left/right montages remain directionally legible.
+	if (!bIsLockedOn)
+	{
+		SetActorRotation(RollDirection.Rotation());
+	}
 	if (GetMesh())
 	{
 		BaseMeshRelativeLocation = GetMesh()->GetRelativeLocation();
@@ -355,16 +480,6 @@ void AExceptionCharacter::UpdateDodgeRoll(float DeltaSeconds)
 		}
 	}
 
-	const float TurnAlpha = FMath::InterpEaseInOut(0.0f, 1.0f, Alpha, 1.65f);
-	if (GetMesh())
-	{
-		GetMesh()->SetRelativeRotation(FRotator(
-			BaseMeshRelativeRotation.Pitch - 360.0f * TurnAlpha,
-			BaseMeshRelativeRotation.Yaw,
-			BaseMeshRelativeRotation.Roll));
-		GetMesh()->SetRelativeLocation(BaseMeshRelativeLocation + FVector(0.0f, 0.0f, FMath::Sin(Alpha * PI) * RollVisualLift));
-	}
-
 	if (Alpha >= 1.0f)
 	{
 		EndDodgeRoll();
@@ -408,13 +523,24 @@ bool AExceptionCharacter::DoParry()
 	}
 
 	SetCombatState(EBRPlayerCombatState::Parry);
-	PlayOptionalMontage(ParryMontage);
-	UE_LOG(LogTemplateCharacter, Log, TEXT("Parry: Active %.2fs"), ParryActiveDuration);
-
+	// Mirror dodge's frame-zero safety. NotifyBegin is idempotent and NotifyEnd
+	// remains the precise authored close when the montage contains the window.
 	bIsParryActive = true;
+	bParryWindowUsesNotify = false;
 	BP_ParryWindowStarted();
+	const bool bAnimationStarted = PlayOptionalMontage(ParryMontage);
+	const bool bWindowBeganDuringPlay = bParryWindowUsesNotify;
+	bParryWindowUsesNotify = bWindowBeganDuringPlay
+		|| (bAnimationStarted && AnimationUsesWindow(ParryMontage, EBRPlayerAnimWindow::Parry));
+	HandleAnimationEvent(EBRPlayerAnimEvent::ParryAttempt);
+	UE_LOG(LogTemplateCharacter, Log, TEXT("Parry: Active %.2fs / Notify=%s"),
+		ParryActiveDuration,
+		bParryWindowUsesNotify ? TEXT("true") : TEXT("false"));
 
-	GetWorldTimerManager().SetTimer(ParryTimerHandle, this, &AExceptionCharacter::EndParryWindow, ParryActiveDuration, false);
+	if (!bParryWindowUsesNotify)
+	{
+		GetWorldTimerManager().SetTimer(ParryTimerHandle, this, &AExceptionCharacter::EndParryWindow, ParryActiveDuration, false);
+	}
 	GetWorldTimerManager().SetTimer(StateTimerHandle, this, &AExceptionCharacter::FinishCombatAction, ParryDuration, false);
 	return true;
 }
@@ -505,7 +631,8 @@ void AExceptionCharacter::PerformAttackTrace(float Damage, float GroggyDamage)
 
 	if (LastAttackHitCount > 0)
 	{
-		PlayHitSfx();
+		HandleAnimationEvent(EBRPlayerAnimEvent::HitVFX);
+		HandleAnimationEvent(EBRPlayerAnimEvent::HitSFX);
 		if (!bHitStopTriggeredThisAttack)
 		{
 			bHitStopTriggeredThisAttack = true;
@@ -592,6 +719,7 @@ float AExceptionCharacter::TakeDamage(float Damage, FDamageEvent const& DamageEv
 	if (bIsParryActive && bCanParryIncomingDamage)
 	{
 		EndParryWindow();
+		PlayParrySuccessReaction();
 
 		if (ABRBossBase* BossCauser = Cast<ABRBossBase>(DamageCauser))
 		{
@@ -621,6 +749,8 @@ float AExceptionCharacter::TakeDamage(float Damage, FDamageEvent const& DamageEv
 		ResetExecCam();
 		ClearLockOn();
 		SetCombatState(EBRPlayerCombatState::Dead);
+		PlayDeathReaction(DamageCauser);
+		HandleAnimationEvent(EBRPlayerAnimEvent::PlayerDeath);
 		GetCharacterMovement()->DisableMovement();
 		SpawnPlayerGraveMarker();
 		GetWorldTimerManager().SetTimer(RespawnTimerHandle, this, &AExceptionCharacter::RespawnAtCheckpoint, RespawnDelay, false);
@@ -634,7 +764,9 @@ float AExceptionCharacter::TakeDamage(float Damage, FDamageEvent const& DamageEv
 	EndParryWindow();
 	bIsInvincible = false;
 	SetCombatState(EBRPlayerCombatState::Hit);
-	PlayOptionalMontage(HitMontage);
+	const bool bHeavyHit = Damage >= HeavyHitDamageThreshold;
+	PlayHitReaction(DamageCauser, bHeavyHit);
+	HandleAnimationEvent(EBRPlayerAnimEvent::PlayerHit);
 
 	if (DamageCauser)
 	{
@@ -672,11 +804,16 @@ void AExceptionCharacter::SetCombatState(EBRPlayerCombatState NewState)
 	if (PreviousState == EBRPlayerCombatState::Dodge && NewState != EBRPlayerCombatState::Dodge)
 	{
 		EndDodgeRoll();
+		bInvincibilityUsesNotify = false;
 	}
 	if ((PreviousState == EBRPlayerCombatState::LightAttack || PreviousState == EBRPlayerCombatState::HeavyAttack)
 		&& NewState != PreviousState)
 	{
 		EndAttackHitWindow();
+		bAttackWindowUsesNotify = false;
+		bComboWindowUsesNotify = false;
+		bComboInputWindowActive = false;
+		bRootMotionLocked = false;
 		DamagedActorsThisAttack.Reset();
 		if (PreviousState == EBRPlayerCombatState::LightAttack)
 		{
@@ -686,10 +823,22 @@ void AExceptionCharacter::SetCombatState(EBRPlayerCombatState NewState)
 	if (PreviousState == EBRPlayerCombatState::Healing && NewState != EBRPlayerCombatState::Healing)
 	{
 		CancelFlaskHeal();
+		bHealUsesNotify = false;
+	}
+	if (PreviousState == EBRPlayerCombatState::Parry && NewState != EBRPlayerCombatState::Parry)
+	{
+		bParryWindowUsesNotify = false;
 	}
 	if (NewState != EBRPlayerCombatState::Idle)
 	{
 		StopSprint();
+	}
+	if (NewState == EBRPlayerCombatState::Idle || NewState == EBRPlayerCombatState::Hit
+		|| NewState == EBRPlayerCombatState::Dead || NewState == EBRPlayerCombatState::Execution)
+	{
+		bComboWindowUsesNotify = false;
+		bComboInputWindowActive = false;
+		bRootMotionLocked = false;
 	}
 	CombatState = NewState;
 	OnCombatStateChanged.Broadcast(CombatState);
@@ -734,6 +883,7 @@ void AExceptionCharacter::FinishCombatAction()
 void AExceptionCharacter::EndInvincibility()
 {
 	bIsInvincible = false;
+	bInvincibilityUsesNotify = false;
 	GetWorldTimerManager().ClearTimer(InvincibleTimerHandle);
 }
 
@@ -745,19 +895,196 @@ void AExceptionCharacter::EndParryWindow()
 	}
 
 	bIsParryActive = false;
+	bParryWindowUsesNotify = false;
 	GetWorldTimerManager().ClearTimer(ParryTimerHandle);
 	BP_ParryWindowEnded();
 }
 
-void AExceptionCharacter::PlayOptionalMontage(UAnimMontage* Montage)
+bool AExceptionCharacter::PlayOptionalMontage(UAnimMontage* Montage, float PlayRate)
 {
 	if (!Montage)
 	{
-		return;
+		return false;
 	}
 
 	if (UAnimInstance* AnimInstance = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr)
 	{
-		AnimInstance->Montage_Play(Montage);
+		return AnimInstance->Montage_Play(Montage, FMath::Max(0.1f, PlayRate)) > 0.0f;
 	}
+	return false;
+}
+
+void AExceptionCharacter::BeginAnimationWindow(EBRPlayerAnimWindow Window)
+{
+	switch (Window)
+	{
+	case EBRPlayerAnimWindow::AttackTrace:
+		if (CombatState == EBRPlayerCombatState::LightAttack || CombatState == EBRPlayerCombatState::HeavyAttack)
+		{
+			GetWorldTimerManager().ClearTimer(AttackHitTimerHandle);
+			bAttackWindowUsesNotify = true;
+			BeginAttackHitWindow();
+		}
+		break;
+	case EBRPlayerAnimWindow::Invincibility:
+		if (CombatState == EBRPlayerCombatState::Dodge)
+		{
+			GetWorldTimerManager().ClearTimer(InvincibleTimerHandle);
+			bInvincibilityUsesNotify = true;
+			bIsInvincible = true;
+		}
+		break;
+	case EBRPlayerAnimWindow::Parry:
+		if (CombatState == EBRPlayerCombatState::Parry)
+		{
+			GetWorldTimerManager().ClearTimer(ParryTimerHandle);
+			bParryWindowUsesNotify = true;
+			if (!bIsParryActive)
+			{
+				bIsParryActive = true;
+				BP_ParryWindowStarted();
+			}
+		}
+		break;
+	case EBRPlayerAnimWindow::ComboInput:
+		if (CombatState == EBRPlayerCombatState::LightAttack)
+		{
+			bComboWindowUsesNotify = true;
+			bComboInputWindowActive = true;
+		}
+		break;
+	case EBRPlayerAnimWindow::RootMotionLock:
+		if (CombatState != EBRPlayerCombatState::Idle && CombatState != EBRPlayerCombatState::Dead)
+		{
+			bRootMotionLocked = true;
+			GetCharacterMovement()->StopMovementImmediately();
+		}
+		break;
+	default:
+		break;
+	}
+}
+
+void AExceptionCharacter::EndAnimationWindow(EBRPlayerAnimWindow Window)
+{
+	switch (Window)
+	{
+	case EBRPlayerAnimWindow::AttackTrace:
+		EndAttackHitWindow();
+		bAttackWindowUsesNotify = false;
+		break;
+	case EBRPlayerAnimWindow::Invincibility:
+		if (CombatState == EBRPlayerCombatState::Dodge)
+		{
+			EndInvincibility();
+		}
+		break;
+	case EBRPlayerAnimWindow::Parry:
+		if (CombatState == EBRPlayerCombatState::Parry)
+		{
+			EndParryWindow();
+		}
+		break;
+	case EBRPlayerAnimWindow::ComboInput:
+		bComboInputWindowActive = false;
+		break;
+	case EBRPlayerAnimWindow::RootMotionLock:
+		bRootMotionLocked = false;
+		break;
+	default:
+		break;
+	}
+}
+
+void AExceptionCharacter::HandleAnimationEvent(EBRPlayerAnimEvent Event)
+{
+	const UEnum* EventEnum = StaticEnum<EBRPlayerAnimEvent>();
+	const FName EventName = EventEnum
+		? FName(*EventEnum->GetNameStringByValue(static_cast<int64>(Event)))
+		: NAME_None;
+	BP_PlayerAnimationEvent(EventName);
+
+	switch (Event)
+	{
+	case EBRPlayerAnimEvent::Footstep:
+		PlayStepSfx();
+		break;
+	case EBRPlayerAnimEvent::LightWeaponSwing:
+		PlaySwingSfx(false);
+		break;
+	case EBRPlayerAnimEvent::HeavyWeaponSwing:
+		PlaySwingSfx(true);
+		break;
+	case EBRPlayerAnimEvent::Heal:
+		GetWorldTimerManager().ClearTimer(FlaskHealTimerHandle);
+		bHealUsesNotify = true;
+		ApplyFlaskHeal();
+		break;
+	case EBRPlayerAnimEvent::HitVFX:
+		break;
+	case EBRPlayerAnimEvent::HitSFX:
+		PlayHitSfx();
+		break;
+	case EBRPlayerAnimEvent::Dodge:
+	case EBRPlayerAnimEvent::ParryAttempt:
+	case EBRPlayerAnimEvent::ParrySuccess:
+	case EBRPlayerAnimEvent::PlayerHit:
+	case EBRPlayerAnimEvent::PlayerDeath:
+		break;
+	case EBRPlayerAnimEvent::ExecutionDamage:
+		if (CombatState == EBRPlayerCombatState::Execution)
+		{
+			GetWorldTimerManager().ClearTimer(ExecHitTimer);
+			bExecutionDamageUsesNotify = true;
+			DoExecHit();
+		}
+		break;
+	case EBRPlayerAnimEvent::FinishAction:
+		FinishCombatAction();
+		break;
+	default:
+		break;
+	}
+}
+
+void AExceptionCharacter::PlayHitReaction(AActor* DamageCauser, bool bHeavyHit)
+{
+	UAnimSequence* Reaction = bHeavyHit ? HeavyKnockbackAnim.Get() : HitFrontAnim.Get();
+	if (!bHeavyHit && DamageCauser)
+	{
+		const FVector ToCauser = (DamageCauser->GetActorLocation() - GetActorLocation()).GetSafeNormal2D();
+		const float ForwardAmount = FVector::DotProduct(GetActorForwardVector().GetSafeNormal2D(), ToCauser);
+		const float RightAmount = FVector::DotProduct(GetActorRightVector().GetSafeNormal2D(), ToCauser);
+		if (FMath::Abs(RightAmount) > FMath::Abs(ForwardAmount))
+		{
+			Reaction = RightAmount >= 0.0f ? HitRightAnim.Get() : HitLeftAnim.Get();
+		}
+		else if (ForwardAmount < 0.0f)
+		{
+			Reaction = HitBackAnim.Get();
+		}
+	}
+
+	PlayAttackSequence(Reaction, HitMontage.Get(), bHeavyHit ? 1.05f : 1.25f);
+}
+
+void AExceptionCharacter::PlayDeathReaction(AActor* DamageCauser)
+{
+	if (DamageCauser)
+	{
+		const FVector Away = (GetActorLocation() - DamageCauser->GetActorLocation()).GetSafeNormal2D();
+		if (!Away.IsNearlyZero())
+		{
+			SetActorRotation((-Away).Rotation());
+		}
+	}
+	PlayAttackSequence(DeathAnim.Get(), nullptr, 1.0f);
+}
+
+void AExceptionCharacter::PlayParrySuccessReaction()
+{
+	GetWorldTimerManager().ClearTimer(StateTimerHandle);
+	PlayAttackSequence(ParrySuccessAnim.Get(), nullptr, 1.45f);
+	HandleAnimationEvent(EBRPlayerAnimEvent::ParrySuccess);
+	GetWorldTimerManager().SetTimer(StateTimerHandle, this, &AExceptionCharacter::FinishCombatAction, 0.42f, false);
 }

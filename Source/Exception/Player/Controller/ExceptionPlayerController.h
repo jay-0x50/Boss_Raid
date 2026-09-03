@@ -38,6 +38,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Exception|Player UI")
 	UUserWidget* ShowPlayerHUDWidget();
 
+	UFUNCTION(BlueprintPure, Category="Exception|Player UI")
+	UUserWidget* GetPlayerHUDWidget() const { return PlayerHUDWidget; }
+
 	UFUNCTION(BlueprintCallable, Category="Exception|Player UI")
 	void RefreshPlayerHUD();
 
@@ -215,6 +218,7 @@ protected:
 	void HandleTitleQuitClicked();
 
 	void BindPlayerHUDToPawn();
+	void EnsureGameplayWidgets();
 	void UnbindPlayerHUDFromPawn();
 	void BindInventoryWidgetToPawn();
 	void UnbindInventoryWidgetFromPawn();
@@ -237,5 +241,7 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<UBRInventoryComponent> BoundInventoryComponent;
+
+	FTimerHandle WidgetInitRetryTimerHandle;
 
 };

@@ -28,6 +28,7 @@ MESH = {
     "floor": "/Game/ThirdParty/BossEnvironment/KenneyDungeon/SM_KD_FloorBig",
     "floor_detail": "/Game/ThirdParty/BossEnvironment/KenneyDungeon/SM_KD_FloorDetail",
     "stairs": "/Game/ThirdParty/BossEnvironment/KenneyDungeon/SM_KD_StairsWide",
+    "cube": "/Engine/BasicShapes/Cube.Cube",
 }
 
 MATERIAL = {
@@ -104,6 +105,26 @@ PYTHON_REQUIRED_LABELS.update(
     for index in range(4)
 )
 PYTHON_REQUIRED_LABELS.update(
+    f"{PREFIX}Python_Vethara_DataCrystal_{index:02d}" for index in range(3)
+)
+PYTHON_REQUIRED_LABELS.update(
+    f"{PREFIX}Python_Vethara_FrostTrace_{index:02d}" for index in range(3)
+)
+PYTHON_REQUIRED_LABELS.update(
+    f"{PREFIX}Python_Aurathos_HeatPlate_{index:02d}" for index in range(3)
+)
+PYTHON_REQUIRED_LABELS.update(
+    f"{PREFIX}Python_Aurathos_ErrorVein_{index:02d}" for index in range(3)
+)
+PYTHON_REQUIRED_LABELS.update(
+    f"{PREFIX}Python_CenterScar_{index:02d}" for index in range(3)
+)
+PYTHON_REQUIRED_LABELS.update(
+    f"{PREFIX}Python_Center{side}Trace_{index:02d}"
+    for side in ("Cyan", "Gold")
+    for index in range(2)
+)
+PYTHON_REQUIRED_LABELS.update(
     f"{PREFIX}Python_{side}_BrokenWall_{index:02d}"
     for side in ("Vethara", "Aurathos")
     for index in range(3)
@@ -144,7 +165,8 @@ def current_level():
     return level
 
 
-def make_mesh_spec(label, arena, mesh, location, scale, rotation=(0.0, 0.0, 0.0), collision=True, material=None, folder="Ruins"):
+def make_mesh_spec(label, arena, mesh, location, scale, rotation=(0.0, 0.0, 0.0), collision=True,
+                   material=None, folder="Ruins", cast_shadow=True):
     return {
         "kind": "mesh",
         "label": f"{PREFIX}{arena}_{label}",
@@ -156,10 +178,11 @@ def make_mesh_spec(label, arena, mesh, location, scale, rotation=(0.0, 0.0, 0.0)
         "collision": collision,
         "material": material,
         "folder": folder,
+        "cast_shadow": cast_shadow,
     }
 
 
-def make_light_spec(label, arena, location, color, intensity, radius):
+def make_light_spec(label, arena, location, color, intensity, radius, cast_shadows=False):
     return {
         "kind": "light",
         "label": f"{PREFIX}{arena}_{label}",
@@ -169,6 +192,7 @@ def make_light_spec(label, arena, location, color, intensity, radius):
         "intensity": intensity,
         "radius": radius,
         "folder": "Lighting",
+        "cast_shadows": cast_shadows,
     }
 
 
@@ -241,8 +265,8 @@ def add_common_arena(specs, arena, data):
     color = data["light"]
     specs.extend(
         [
-            make_light_spec("KeyLight", arena, (cx + 780.0, cy - 960.0, cz + 430.0), color, 1450.0, 3000.0),
-            make_light_spec("RimLight", arena, (cx + 930.0, cy + 1050.0, cz + 360.0), color, 850.0, 2400.0),
+            make_light_spec("KeyLight", arena, (cx + 780.0, cy - 960.0, cz + 430.0), color, 650.0, 2600.0),
+            make_light_spec("RimLight", arena, (cx + 930.0, cy + 1050.0, cz + 360.0), color, 320.0, 1900.0),
         ]
     )
 
@@ -360,11 +384,94 @@ def add_python_dual_arena(specs, data):
     specs.extend(
         [
             make_light_spec("Vethara_KeyLight", "Python", (cx - 360.0, cy - 1240.0, cz + 470.0),
-                            (0.0, 0.40, 1.0), 520.0, 1750.0),
+                            (0.0, 0.40, 1.0), 340.0, 1650.0, False),
             make_light_spec("Aurathos_KeyLight", "Python", (cx + 330.0, cy + 1270.0, cz + 490.0),
-                            (1.0, 0.55, 0.0), 500.0, 1720.0),
+                            (1.0, 0.55, 0.0), 320.0, 1620.0, False),
         ]
     )
+
+    # Vethara's side uses sparse, sharp cyan data shards and thin ground traces.
+    # Everything inside the combat bowl is non-colliding and below the camera's
+    # foreground line; the boss anchor and the preserved west/east lane stay clear.
+    vethara_crystals = (
+        ((3600.0, 3650.0, cz + 70.0), (0.30, 0.30, 1.55), -14.0),
+        ((4480.0, 3500.0, cz + 62.0), (0.24, 0.28, 1.25), 9.0),
+        ((5260.0, 3840.0, cz + 68.0), (0.28, 0.25, 1.42), 18.0),
+    )
+    for index, (location, scale, yaw) in enumerate(vethara_crystals):
+        specs.append(
+            make_mesh_spec(
+                f"Vethara_DataCrystal_{index:02d}", "Python", "wall_detail", location, scale,
+                (0.0, yaw, (-5.0, 4.0, -3.0)[index]), collision=False,
+                material="python_floor", folder="TwinRuins/Vethara/DataCrystals",
+            )
+        )
+
+    for index, (location, scale, yaw) in enumerate((
+        ((3650.0, 4370.0, cz + 13.0), (3.6, 0.035, 0.018), -8.0),
+        ((4420.0, 4180.0, cz + 13.0), (3.0, 0.032, 0.018), 11.0),
+        ((5110.0, 4440.0, cz + 13.0), (2.7, 0.030, 0.018), -15.0),
+    )):
+        specs.append(
+            make_mesh_spec(
+                f"Vethara_FrostTrace_{index:02d}", "Python", "cube", location, scale,
+                (0.0, yaw, 0.0), collision=False, material="python_floor",
+                folder="TwinRuins/Vethara/FrostTraces", cast_shadow=False,
+            )
+        )
+
+    # Aurathos is heavier: broad gold heat plates sit over narrow crimson
+    # runtime veins. They are low enough to preserve both boss silhouettes.
+    aurathos_plates = (
+        ((3570.0, 6250.0, cz + 11.0), (3.1, 0.70, 0.025), 11.0),
+        ((4420.0, 6460.0, cz + 11.0), (3.8, 0.82, 0.025), -8.0),
+        ((5270.0, 6190.0, cz + 11.0), (2.8, 0.75, 0.025), 16.0),
+    )
+    for index, (location, scale, yaw) in enumerate(aurathos_plates):
+        specs.append(
+            make_mesh_spec(
+                f"Aurathos_HeatPlate_{index:02d}", "Python", "cube", location, scale,
+                (0.0, yaw, 0.0), collision=False, material="vritra_floor",
+                folder="TwinRuins/Aurathos/HeatPlates", cast_shadow=False,
+            )
+        )
+        specs.append(
+            make_mesh_spec(
+                f"Aurathos_ErrorVein_{index:02d}", "Python", "cube",
+                (location[0] + 35.0, location[1] - 18.0, location[2] + 3.0),
+                (scale[0] * 0.76, 0.045, 0.014), (0.0, yaw + 7.0, 0.0), collision=False,
+                material="cmd_floor", folder="TwinRuins/Aurathos/ErrorVeins", cast_shadow=False,
+            )
+        )
+
+    # A jagged, low central fault is the only emissive focal point in the bowl.
+    # Cyan and gold traces stop short of each other instead of filling the floor.
+    center_scar = (
+        ((3550.0, cy - 8.0, cz + 12.0), (4.7, 0.12, 0.026), -4.0),
+        ((4300.0, cy + 18.0, cz + 12.0), (3.8, 0.14, 0.026), 6.0),
+        ((5050.0, cy - 14.0, cz + 12.0), (4.8, 0.11, 0.026), -5.0),
+    )
+    for index, (location, scale, yaw) in enumerate(center_scar):
+        specs.append(
+            make_mesh_spec(
+                f"CenterScar_{index:02d}", "Python", "cube", location, scale,
+                (0.0, yaw, 0.0), collision=False, material="cmd_floor",
+                folder="TwinRuins/CenterFault", cast_shadow=False,
+            )
+        )
+    for side, material, y_offset, yaw_sign in (
+        ("Cyan", "python_floor", -72.0, -1.0),
+        ("Gold", "vritra_floor", 72.0, 1.0),
+    ):
+        for index, x in enumerate((3820.0, 4780.0)):
+            specs.append(
+                make_mesh_spec(
+                    f"Center{side}Trace_{index:02d}", "Python", "cube",
+                    (x, cy + y_offset + index * 10.0 * yaw_sign, cz + 14.0),
+                    (3.1, 0.030, 0.015), (0.0, yaw_sign * (5.0 + index * 4.0), 0.0),
+                    collision=False, material=material, folder="TwinRuins/CenterFault", cast_shadow=False,
+                )
+            )
 
 
 def validate_python_specs(specs):
@@ -434,7 +541,7 @@ def add_cmd_keep(specs, data):
             )
         )
 
-    specs.append(make_light_spec("ThroneLight", "CMD", (cx + 1540.0, cy, cz + 510.0), data["light"], 1900.0, 3300.0))
+    specs.append(make_light_spec("ThroneLight", "CMD", (cx + 1540.0, cy, cz + 510.0), data["light"], 850.0, 2800.0))
 
 
 def build_specs():
@@ -472,7 +579,7 @@ def configure_mesh_actor(actor, spec, meshes, materials):
     component = mesh_component(actor)
     component.set_static_mesh(meshes[spec["mesh"]])
     component.set_mobility(unreal.ComponentMobility.STATIC)
-    component.set_editor_property("cast_shadow", True)
+    component.set_editor_property("cast_shadow", spec.get("cast_shadow", True))
     if spec["material"]:
         material = materials[spec["material"]]
         for index in range(max(1, component.get_num_materials())):
@@ -504,7 +611,7 @@ def configure_light_actor(actor, spec):
     component.set_editor_property("light_color", make_color(
         spec["color"][0] * 255.0, spec["color"][1] * 255.0, spec["color"][2] * 255.0
     ))
-    component.set_editor_property("cast_shadows", True)
+    component.set_editor_property("cast_shadows", spec.get("cast_shadows", False))
 
 
 def reconcile_specs(actor_subsystem, target_level, specs, meshes, materials):
@@ -607,11 +714,11 @@ def tune_field_lighting(actors):
     for actor in actors:
         if isinstance(actor, unreal.DirectionalLight):
             component = actor.get_component_by_class(unreal.DirectionalLightComponent)
-            component.set_editor_property("intensity", 1.15)
+            component.set_editor_property("intensity", 1.05)
             changed += 1
         elif isinstance(actor, unreal.SkyLight):
             component = actor.get_component_by_class(unreal.SkyLightComponent)
-            component.set_editor_property("intensity", 0.55)
+            component.set_editor_property("intensity", 0.70)
             changed += 1
     return changed
 

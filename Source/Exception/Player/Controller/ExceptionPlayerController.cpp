@@ -10,6 +10,7 @@
 #include "Blueprint/UserWidget.h"
 #include "EnhancedInputSubsystems.h"
 #include "Engine/LocalPlayer.h"
+#include "Engine/World.h"
 #include "GameFramework/InputSettings.h"
 #include "InputMappingContext.h"
 #include "Kismet/GameplayStatics.h"
@@ -42,9 +43,10 @@ void AExceptionPlayerController::BeginPlay()
 	{
 		// Let the legacy title Level Blueprint finish first. ShowTitleMenuWidget
 		// adopts that widget when present, preventing a duplicate menu layer.
-		GetWorldTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this]()
+		WidgetInitRetryTimerHandle = GetWorldTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this]()
 		{
-			if (IsInTitleLevel())
+			const UWorld* World = GetWorld();
+			if (World && !World->bIsTearingDown && !IsActorBeingDestroyed() && IsInTitleLevel())
 			{
 				ShowTitleMenuWidget();
 			}
@@ -55,10 +57,15 @@ void AExceptionPlayerController::BeginPlay()
 		SetPause(false);
 		bShowMouseCursor = false;
 		SetInputMode(FInputModeGameOnly());
-		ShowPlayerHUDWidget();
-		ShowWorldMapWidget();
-		BindPlayerHUDToPawn();
-		BindInventoryWidgetToPawn();
+		EnsureGameplayWidgets();
+
+		// Local-player ownership may settle just after BeginPlay in viewport PIE
+		// and during travel. Retry once on the next game tick; every operation is
+		// idempotent and the level check prevents title UI from being affected.
+		WidgetInitRetryTimerHandle = GetWorldTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(this, [this]()
+		{
+			EnsureGameplayWidgets();
+		}));
 	}
 
 	if (ShouldUseTouchControls() && IsLocalPlayerController())
@@ -74,6 +81,11 @@ void AExceptionPlayerController::BeginPlay()
 
 void AExceptionPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(WidgetInitRetryTimerHandle);
+	}
+
 	UnbindPlayerHUDFromPawn();
 	UnbindInventoryWidgetFromPawn();
 
@@ -121,13 +133,36 @@ void AExceptionPlayerController::SetPawn(APawn* InPawn)
 	UnbindPlayerHUDFromPawn();
 	UnbindInventoryWidgetFromPawn();
 	Super::SetPawn(InPawn);
-	if (IsInTitleLevel())
+	if (!IsValid(InPawn) || IsInTitleLevel())
 	{
 		return;
 	}
+
+	// PIE, seamless travel, and delayed login can all assign the gameplay pawn
+	// after BeginPlay has already attempted to build the local HUD.  The show
+	// functions are idempotent, so retrying here guarantees the gauges and
+	// minimap exist as soon as the controller actually owns Hendel.
+	EnsureGameplayWidgets();
+	RefreshPlayerHUD();
+}
+
+void AExceptionPlayerController::EnsureGameplayWidgets()
+{
+	const UWorld* World = GetWorld();
+	if (!World
+		|| World->bIsTearingDown
+		|| IsActorBeingDestroyed()
+		|| !IsValid(GetPawn())
+		|| IsInTitleLevel()
+		|| !IsLocalPlayerController())
+	{
+		return;
+	}
+
+	ShowPlayerHUDWidget();
+	ShowWorldMapWidget();
 	BindPlayerHUDToPawn();
 	BindInventoryWidgetToPawn();
-	RefreshPlayerHUD();
 }
 
 void AExceptionPlayerController::SetupInputComponent()

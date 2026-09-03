@@ -7,12 +7,18 @@ import unreal
 MAP_PATH = "/Game/Maps/L_Runtime_Field"
 PREFIX = "Explore_"
 
-BOULDER = "/Game/ThirdParty/BossEnvironment/PolyHavenLOD/Boulder01/boulder_01_LOD1"
+# LOD2 is the authored mid-distance boulder. LOD1 is 33k triangles and was
+# repeated more than fifty times as separate actors; LOD2 keeps the silhouette
+# while materially reducing the open-field geometry cost.
+BOULDER = "/Game/ThirdParty/BossEnvironment/PolyHavenLOD/Boulder01/boulder_01_LOD2"
 FORT = "/Game/ThirdParty/BossEnvironment/PolyHaven/SM_PH_ModularFort01"
 FLOOR = "/Game/LevelPrototyping/Meshes/SM_ChamferCube"
+TEMPLATE_FLOOR = "/Engine/MapTemplates/SM_Template_Map_Floor"
+EDITOR_ONLY_FALLBACK_MESH = "/Engine/BasicShapes/Cube"
 GATE = "/Game/ThirdParty/BossEnvironment/KenneyDungeon/SM_KD_Gate"
 BAR_GATE = "/Game/ThirdParty/BossEnvironment/KenneyDungeon/gate-metal-bars"
 WALL = "/Game/ThirdParty/BossEnvironment/KenneyDungeon/SM_KD_WallHalf"
+WALL_DETAIL = "/Game/ThirdParty/BossEnvironment/KenneyDungeon/SM_KD_WallDetail"
 CORNER = "/Game/ThirdParty/BossEnvironment/KenneyDungeon/SM_KD_WallCorner"
 
 BOULDER_MAT = "/Game/ThirdParty/BossEnvironment/Materials/M_PH_Boulder01"
@@ -44,7 +50,7 @@ ROUTES = {
             (2920.0, 1880.0, 68.0), (2600.0, 2750.0, 88.0), (3040.0, 3650.0, 112.0),
             (2420.0, 4480.0, 136.0), (1820.0, 5200.0, 150.0),
         ],
-        "material": PYTHON_MAT,
+        "material": FIELD_MAT,
         "field_width": 2250.0,
         "phase": 0.35,
         "hills": [
@@ -179,7 +185,7 @@ def spawn(label, cls, location, rotation=(0.0, 0.0, 0.0), folder="World/Explorat
 
 
 def mesh(label, mesh_asset, material, location, scale, rotation=(0.0, 0.0, 0.0), collision=False,
-         folder="World/Exploration", mobility=unreal.ComponentMobility.STATIC):
+         folder="World/Exploration", mobility=unreal.ComponentMobility.STATIC, cast_shadow=True):
     actor = spawn(label, unreal.StaticMeshActor.static_class(), location, rotation, folder)
     component = actor.get_component_by_class(unreal.StaticMeshComponent)
     component.set_static_mesh(mesh_asset)
@@ -189,18 +195,21 @@ def mesh(label, mesh_asset, material, location, scale, rotation=(0.0, 0.0, 0.0),
     component.set_collision_enabled(unreal.CollisionEnabled.QUERY_AND_PHYSICS if collision else unreal.CollisionEnabled.NO_COLLISION)
     component.set_collision_profile_name(unreal.Name("BlockAll" if collision else "NoCollision"))
     component.set_mobility(mobility)
+    component.set_editor_property("cast_shadow", cast_shadow)
     actor.set_actor_enable_collision(collision)
     actor.set_actor_scale3d(unreal.Vector(*scale))
     return actor
 
 
-def point_light(label, location, color, intensity=260.0, radius=820.0, folder="World/Exploration/Lights"):
+def point_light(label, location, color, intensity=180.0, radius=760.0, folder="World/Exploration/Lights",
+                cast_shadows=False):
     actor = spawn(label, unreal.PointLight.static_class(), location, folder=folder)
     light = actor.get_component_by_class(unreal.PointLightComponent)
     light.set_editor_property("light_color", color)
     light.set_editor_property("intensity", intensity)
     light.set_editor_property("attenuation_radius", radius)
-    light.set_editor_property("cast_shadows", True)
+    light.set_editor_property("cast_shadows", cast_shadows)
+    light.set_mobility(unreal.ComponentMobility.STATIONARY)
     actor.set_actor_enable_collision(False)
     return actor
 
@@ -447,9 +456,8 @@ def build_rock_outcrops(loaded):
 def build_landmarks(loaded):
     desired = []
     fort, gate, wall, corner = loaded[FORT], loaded[GATE], loaded[WALL], loaded[CORNER]
-    ruin_mat = loaded[BOULDER_MAT]
     landmarks = [
-        ("PythonRuin", "Field1", (2680.0, 2540.0), 102.0, make_color(44, 138, 255)),
+        ("PythonRuin", "Field1", (2070.0, 4450.0), 92.0, make_color(44, 138, 255)),
         ("PerlDescent", "Field2", (6720.0, 2100.0), -112.0, make_color(255, 135, 38)),
         ("PerlArchive", "Field2", (4700.0, -1820.0), -128.0, make_color(255, 105, 28)),
         ("RuntimeCollapse", "Field3", (9100.0, -3200.0), 46.0, make_color(255, 38, 82)),
@@ -464,11 +472,16 @@ def build_landmarks(loaded):
         def offset_location(forward, right, height):
             return x + forward_x * forward + right_x * right, y + forward_y * forward + right_y * right, z + height
 
+        hero_scale = 1.45 if name == "PythonRuin" else 1.0
         specs = [
-            ("Ruin", corner, ruin_mat, offset_location(90.0, 720.0, -25.0), (0.95, 0.95, 1.25), yaw + 35.0, True),
-            ("Arch", gate, ruin_mat, (x, y, z + 55.0), (0.68, 0.68, 0.76), yaw, False),
-            ("WallL", loaded[BOULDER], ruin_mat, offset_location(100.0, -540.0, -35.0), (2.7, 2.4, 2.1), yaw + 22.0, True),
-            ("WallR", loaded[BOULDER], ruin_mat, offset_location(100.0, 540.0, -35.0), (2.5, 2.7, 2.0), yaw - 27.0, True),
+            ("Ruin", corner, loaded[STONE_MAT], offset_location(90.0, 720.0, -25.0),
+             (0.95 * hero_scale, 0.95 * hero_scale, 1.25 * hero_scale), yaw + 35.0, True),
+            ("Arch", gate, loaded[STONE_MAT], (x, y, z + 55.0),
+             (0.68 * hero_scale, 0.68 * hero_scale, 0.76 * hero_scale), yaw, False),
+            ("WallL", loaded[BOULDER], loaded[BOULDER_MAT], offset_location(100.0, -540.0, -35.0),
+             (2.7, 2.4, 2.1), yaw + 22.0, True),
+            ("WallR", loaded[BOULDER], loaded[BOULDER_MAT], offset_location(100.0, 540.0, -35.0),
+             (2.5, 2.7, 2.0), yaw - 27.0, True),
         ]
         for suffix, mesh_asset, material, loc, scale, mesh_yaw, collision in specs:
             label = f"{PREFIX}Landmark_{name}_{suffix}"
@@ -482,7 +495,35 @@ def build_landmarks(loaded):
                      f"World/Exploration/Landmarks/{name}")
         light_label = f"{PREFIX}Landmark_{name}_Light"
         desired.append(light_label)
-        point_light(light_label, (x, y, z + 260.0), color, folder=f"World/Exploration/Landmarks/{name}")
+        point_light(
+            light_label,
+            (x, y, z + (360.0 if name == "PythonRuin" else 260.0)),
+            color,
+            210.0 if name == "PythonRuin" else 145.0,
+            1050.0 if name == "PythonRuin" else 720.0,
+            f"World/Exploration/Landmarks/{name}",
+            False,
+        )
+
+        if name == "PythonRuin":
+            # Two terminal monoliths and a narrow seal make the objective read
+            # as a runtime boundary rather than another generic stone arch.
+            for suffix, side, height_scale in (("TerminalL", -410.0, 1.65), ("TerminalR", 410.0, 1.92)):
+                loc = offset_location(-35.0, side, 30.0)
+                label = f"{PREFIX}Landmark_{name}_{suffix}"
+                desired.append(label)
+                mesh(
+                    label, loaded[WALL_DETAIL], loaded[FORT_WALL_MAT], loc,
+                    (0.44, 0.40, height_scale), (0.0, yaw + (7.0 if side < 0 else -9.0), 0.0),
+                    False, f"World/Exploration/Landmarks/{name}", cast_shadow=True,
+                )
+            label = f"{PREFIX}Landmark_{name}_SealCore"
+            desired.append(label)
+            mesh(
+                label, loaded[BAR_GATE], loaded[PYTHON_MAT], (x + forward_x * 45.0, y + forward_y * 45.0, z + 82.0),
+                (0.82, 0.82, 1.08), (0.0, yaw, 0.0), False,
+                f"World/Exploration/Landmarks/{name}", cast_shadow=False,
+            )
 
     for offset, suffix in ((-360.0, "L"), (0.0, "C"), (360.0, "R")):
         label = f"{PREFIX}SQLSeal_{suffix}"
@@ -521,8 +562,8 @@ def build_encounters(loaded):
         door_y = y + side * 105.0
         door_z, _distance = route_surface(route, x, door_y)
         parts = [
-            ("Shelter", loaded[FORT], loaded[BOULDER_MAT], (x, building_y, building_z - 92.0), (0.105, 0.105, 0.23), outward, False),
-            ("Door", loaded[GATE], loaded[BOULDER_MAT], (x, door_y, door_z + 82.0), (0.78, 0.78, 0.88), outward, False),
+            ("Shelter", loaded[FORT], loaded[FORT_WALL_MAT], (x, building_y, building_z - 92.0), (0.105, 0.105, 0.23), outward, False),
+            ("Door", loaded[GATE], loaded[STONE_MAT], (x, door_y, door_z + 82.0), (0.78, 0.78, 0.88), outward, False),
             ("WingL", loaded[BOULDER], loaded[BOULDER_MAT], (x - 285.0, y + side * 225.0, z - 32.0), (2.4, 2.2, 2.0), outward + 24.0, True),
             ("WingR", loaded[BOULDER], loaded[BOULDER_MAT], (x + 285.0, y + side * 225.0, z - 32.0), (2.2, 2.5, 1.9), outward - 29.0, True),
             ("Threshold", loaded[FLOOR], theme_material[theme], (x, y + side * 50.0, z - 16.0), (4.6, 3.0, 0.28), outward, True),
@@ -539,8 +580,86 @@ def build_encounters(loaded):
                      f"World/Exploration/Encounters/{key}/Building")
         light_label = f"{PREFIX}Encounter_{key}_Light"
         desired.append(light_label)
-        point_light(light_label, (x, y + side * 210.0, z + 210.0), theme_color[theme], 260.0, 650.0,
-                    f"World/Exploration/Encounters/{key}/Building")
+        point_light(light_label, (x, y + side * 210.0, z + 210.0), theme_color[theme], 145.0, 580.0,
+                    f"World/Exploration/Encounters/{key}/Building", False)
+    return desired
+
+
+def build_field1_runtime_identity(loaded):
+    """Author a sparse visual hierarchy from the awakening exit to Python."""
+    desired = []
+
+    # Reuse the project's authored Runtime Tree as the first distant landmark.
+    # It stays non-colliding and off the combat lane, but its silhouette is
+    # framed by the cave exit and remains visible beyond the first checkpoint.
+    runtime_tree = find("Demo_Field_SymbolTree")
+    if runtime_tree:
+        x, y = 3800.0, 1600.0
+        ground_z, _distance = route_surface("Field1", x, y)
+        runtime_tree.modify()
+        runtime_tree.set_actor_scale3d(unreal.Vector(2.1, 2.1, 2.1))
+        runtime_tree.set_actor_location(unreal.Vector(x, y, ground_z), False, False)
+        _origin, extent = runtime_tree.get_actor_bounds(False)
+        current = runtime_tree.get_actor_location()
+        bottom = runtime_tree.get_actor_bounds(False)[0].z - extent.z
+        runtime_tree.set_actor_location(unreal.Vector(current.x, current.y, current.z + ground_z - bottom - 8.0), False, False)
+        runtime_tree.set_actor_enable_collision(False)
+        runtime_tree.set_actor_hidden_in_game(False)
+        runtime_tree.set_folder_path(unreal.Name("World/Exploration/Landmarks/RuntimeTree"))
+        runtime_tree.set_editor_property("tags", [unreal.Name("RuntimeTreeLandmark"), unreal.Name("Field1Sightline")])
+    else:
+        log("Demo_Field_SymbolTree was not found; Runtime Tree sightline could not be moved.")
+
+    guide_specs = [
+        ((2310.0, 690.0), 48.0, 2.2),
+        ((2760.0, 1510.0), 73.0, 2.5),
+        ((2780.0, 2520.0), 103.0, 2.4),
+        ((2910.0, 3490.0), 118.0, 2.5),
+        ((2320.0, 4310.0), 126.0, 2.3),
+    ]
+    for index, ((x, y), yaw, length) in enumerate(guide_specs):
+        z, _distance = route_surface("Field1", x, y)
+        label = f"{PREFIX}Field1Guide_{index:02d}"
+        desired.append(label)
+        mesh(
+            label, loaded[FLOOR], loaded[PYTHON_MAT], (x, y, z + 7.0),
+            (length, 0.055, 0.018), (0.0, yaw, 0.0), False,
+            "World/Exploration/Field1/RuntimeLines", cast_shadow=False,
+        )
+
+    # Thick charcoal cable roots cross the route only at authored story beats.
+    # They are non-colliding so dodge and combat cameras stay predictable.
+    cable_specs = [
+        ((2550.0, 1180.0), -24.0, 4.4),
+        ((2780.0, 2250.0), 18.0, 5.0),
+        ((2810.0, 3180.0), -12.0, 4.6),
+        ((2360.0, 4070.0), 24.0, 4.8),
+    ]
+    for index, ((x, y), yaw, length) in enumerate(cable_specs):
+        z, _distance = route_surface("Field1", x, y)
+        label = f"{PREFIX}Field1CableRoot_{index:02d}"
+        desired.append(label)
+        mesh(
+            label, loaded[FLOOR], loaded[FORT_TRIM_MAT], (x, y, z + 4.0),
+            (length, 0.14, 0.055), (0.0, yaw, (-4.0, 3.0)[index % 2]), False,
+            "World/Exploration/Field1/CableRoots", cast_shadow=False,
+        )
+
+    terminals = [
+        (3260.0, 1880.0, -18.0, 1.05),
+        (1810.0, 2820.0, 12.0, 0.92),
+        (3420.0, 3720.0, -11.0, 1.20),
+        (1540.0, 4350.0, 19.0, 0.86),
+    ]
+    for index, (x, y, yaw, height) in enumerate(terminals):
+        z, _distance = route_surface("Field1", x, y)
+        label = f"{PREFIX}Field1Terminal_{index:02d}"
+        desired.append(label)
+        mesh(
+            label, loaded[WALL_DETAIL], loaded[FORT_WALL_MAT], (x, y, z + 70.0),
+            (0.42, 0.38, height), (0.0, yaw, (-3.0, 4.0)[index % 2]), False,
+            "World/Exploration/Field1/TerminalGraves", cast_shadow=True,
+        )
     return desired
 
 
@@ -553,7 +672,7 @@ def build_story_gate(loaded, key, location, route_yaw, boss_id, line, camera_loc
     pieces = []
     radians = math.radians(route_yaw)
     right_x, right_y = -math.sin(radians), math.cos(radians)
-    material = loaded[BOULDER_MAT]
+    material = loaded[STONE_MAT]
     light_color = make_color(48, 145, 255) if boss_id == "SerpentPython" else make_color(255, 126, 35)
     for index, offset in enumerate((-300.0, 0.0, 300.0)):
         label = f"{PREFIX}StoryGate_{key}_Piece_{index}"
@@ -588,8 +707,8 @@ def build_story_gate(loaded, key, location, route_yaw, boss_id, line, camera_loc
     gate_actor.set_editor_property("play_reveal_on_unlock", True)
     light_label = f"{PREFIX}StoryGate_{key}_Light"
     desired.append(light_label)
-    point_light(light_label, (location[0], location[1], location[2] + 190.0), light_color, 240.0, 560.0,
-                f"Story/World/Gates/{key}")
+    point_light(light_label, (location[0], location[1], location[2] + 190.0), light_color, 150.0, 520.0,
+                f"Story/World/Gates/{key}", False)
     return desired
 
 
@@ -718,6 +837,17 @@ def configure_python_dual_boss():
         (0.0, 180.0, 0.0),
         "Bosses/Python",
     )
+
+    # Vethara is the skeletal half of the twins. Keep its visual type explicit
+    # when the hidden static component receives a harmless Map Check fallback.
+    vethara.set_editor_property(
+        "visual_mesh_type", unreal.BRBossVisualMeshType.SKELETAL_MESH
+    )
+    vethara_static = vethara.get_component_by_class(unreal.StaticMeshComponent)
+    if vethara_static and not vethara_static.get_editor_property("static_mesh"):
+        vethara_static.set_static_mesh(asset(EDITOR_ONLY_FALLBACK_MESH, unreal.StaticMesh))
+        vethara_static.set_visibility(False, True)
+        vethara_static.set_hidden_in_game(True, True)
     coordinator = spawn(
         "Python_TeamCoordinator",
         actor_class("/Script/Exception.BRBossTeamCoordinator"),
@@ -748,14 +878,21 @@ def configure_python_dual_boss():
 
 def retire_old_generated_content():
     retired = 0
+    removed = 0
     old_labels = {"Demo_Field_EnemySpawner_A", "Demo_Field_EnemySpawner_B", "Demo_Field_EnemySpawner_C",
                   "Demo_Field_EnemySpawner_D", "Demo_Field_2_PythonArena_ExitGate", "Demo_Field_1_VritraArena_ExitGate"}
-    for actor in actors():
+    removable_exact = {"Demo_Field_FieldSign"}
+    removable_prefixes = (
+        "Demo_Env_", "Demo_Field_MainPath_", "Demo_Field_Cover_", "EncounterBuild_",
+        "Story_Hill_", "Story_HillRamp_",
+    )
+    for actor in list(actors()):
         label = actor.get_actor_label()
-        if (label in old_labels or label.startswith("Demo_Env_") or
-                label.startswith("Demo_Field_MainPath_") or label.startswith("Demo_Field_Cover_") or
-                label.startswith("EncounterBuild_") or
-                label.startswith("Story_Hill_") or label.startswith("Story_HillRamp_")):
+        if label in removable_exact or label.startswith(removable_prefixes):
+            if subsystem().destroy_actor(actor):
+                removed += 1
+            continue
+        if label in old_labels:
             actor.modify()
             actor.set_actor_hidden_in_game(True)
             actor.set_actor_enable_collision(False)
@@ -763,7 +900,24 @@ def retire_old_generated_content():
             if label.startswith("Demo_Field_EnemySpawner_"):
                 actor.set_editor_property("should_spawn_enemies_immediately", False)
             retired += 1
-    log(f"Retired {retired} prototype actors without deleting user content.")
+
+    # Preserve the starter-map slab for rollback, but retire it completely so
+    # it cannot visually flatten the authored grades or catch traversal at Z=0.
+    template_floor = find("Floor")
+    if template_floor:
+        component = template_floor.get_component_by_class(unreal.StaticMeshComponent)
+        mesh_path = component.static_mesh.get_path_name().split(".", 1)[0] if component and component.static_mesh else ""
+        if mesh_path == TEMPLATE_FLOOR:
+            template_floor.set_actor_hidden_in_game(True)
+            template_floor.set_actor_enable_collision(False)
+            component.set_visibility(False, True)
+            component.set_hidden_in_game(True, True)
+            component.set_collision_enabled(unreal.CollisionEnabled.NO_COLLISION)
+            component.set_collision_profile_name(unreal.Name("NoCollision"))
+            existing_tags = [tag for tag in template_floor.get_editor_property("tags") if str(tag) != "RetiredTemplateFloor"]
+            template_floor.set_editor_property("tags", existing_tags + [unreal.Name("RetiredTemplateFloor")])
+            retired += 1
+    log(f"Retired {retired} legacy logic actors and removed {removed} script-managed prototype visuals.")
 
 
 def relocate_story_beats():
@@ -799,7 +953,7 @@ def main():
     terrain_assets = import_terrain_assets()
     asset_paths = {
         BOULDER: unreal.StaticMesh, FORT: unreal.StaticMesh, FLOOR: unreal.StaticMesh, GATE: unreal.StaticMesh,
-        BAR_GATE: unreal.StaticMesh, WALL: unreal.StaticMesh, CORNER: unreal.StaticMesh,
+        BAR_GATE: unreal.StaticMesh, WALL: unreal.StaticMesh, WALL_DETAIL: unreal.StaticMesh, CORNER: unreal.StaticMesh,
         BOULDER_MAT: unreal.MaterialInterface, STONE_MAT: unreal.MaterialInterface,
         FORT_WALL_MAT: unreal.MaterialInterface, FORT_TRIM_MAT: unreal.MaterialInterface,
         FIELD_MAT: unreal.MaterialInterface, PYTHON_MAT: unreal.MaterialInterface,
@@ -812,6 +966,7 @@ def main():
     desired.update(build_rock_outcrops(loaded))
     desired.update(build_landmarks(loaded))
     desired.update(build_encounters(loaded))
+    desired.update(build_field1_runtime_identity(loaded))
     desired.update(build_story_gates(loaded))
     desired.update(build_checkpoints())
     desired.update(build_lore())

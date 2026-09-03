@@ -9,6 +9,7 @@
 #include "Engine/Engine.h"
 #include "Engine/StaticMesh.h"
 #include "Kismet/GameplayStatics.h"
+#include "Sound/SoundBase.h"
 #include "UObject/ConstructorHelpers.h"
 
 ABRCheckpoint::ABRCheckpoint()
@@ -48,7 +49,11 @@ void ABRCheckpoint::BeginPlay()
 void ABRCheckpoint::OnActivationBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult)
 {
 	AExceptionCharacter* PlayerCharacter = Cast<AExceptionCharacter>(OtherActor);
-	if (!PlayerCharacter)
+	// RespawnAtCheckpoint teleports the still-dead pawn into this overlap before
+	// restoring its stats. Treat that as arrival, not a new rest interaction;
+	// reopening the pause menu here freezes the world timers used by every later
+	// retry (boss intro AI and the next player respawn included).
+	if (!PlayerCharacter || PlayerCharacter->GetCurrentHP() <= 0.0f)
 	{
 		return;
 	}
@@ -78,6 +83,13 @@ void ABRCheckpoint::OnActivationBeginOverlap(UPrimitiveComponent* OverlappedComp
 	{
 		GEngine->AddOnScreenDebugMessage(3001, 1.5f, FColor::Green, TEXT("Checkpoint Activated"));
 	}
+
+	if (ActivationSound)
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, ActivationSound, GetActorLocation(), ActivationSoundVolume);
+	}
+	OnCheckpointActivated.Broadcast(PlayerCharacter);
+	BP_CheckpointActivated(PlayerCharacter);
 
 	if (AExceptionPlayerController* PlayerController = Cast<AExceptionPlayerController>(PlayerCharacter->GetController()))
 	{

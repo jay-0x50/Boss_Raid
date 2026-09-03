@@ -6,6 +6,9 @@
 
 class ABRBossBase;
 class ABRBossTeamCoordinator;
+class ACameraActor;
+class APawn;
+class APlayerController;
 class UBRBossStatusWidget;
 class UBoxComponent;
 class UStaticMeshComponent;
@@ -79,6 +82,23 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Arena|Intro", meta=(ClampMin="0.0", Units="s"))
 	float BossIntroDelay = 1.0f;
 
+	/** Optional authored shots. When assigned, the first encounter uses these before AI starts. */
+	UPROPERTY(EditInstanceOnly, BlueprintReadOnly, Category="Exception|Arena|Intro")
+	TArray<TObjectPtr<ACameraActor>> IntroCameras;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Arena|Intro")
+	TArray<float> IntroCameraTimes;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Arena|Intro", meta=(ClampMin="0.0", Units="s"))
+	float IntroCameraBlendTime = 0.45f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Arena|Intro", meta=(ClampMin="0.0", Units="s"))
+	float IntroReturnBlendTime = 0.65f;
+
+	/** Death retries keep the fight readable without replaying the full reveal. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Arena|Intro")
+	bool bSkipFullIntroOnRetry = true;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Arena|Intro")
 	bool bHideBossStatusUntilIntroFinished = false;
 
@@ -119,6 +139,14 @@ protected:
 	TArray<TObjectPtr<ABRBossBase>> SpawnedBosses;
 
 	FTimerHandle BossIntroTimerHandle;
+	int32 IntroCameraIndex = 0;
+	bool bFullIntroWasShown = false;
+
+	UPROPERTY(Transient)
+	TObjectPtr<APlayerController> IntroPlayerController;
+
+	UPROPERTY(Transient)
+	TObjectPtr<APawn> IntroPlayerPawn;
 
 	UFUNCTION()
 	void OnTriggerBeginOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor, UPrimitiveComponent* OtherComp, int32 OtherBodyIndex, bool bFromSweep, const FHitResult& SweepResult);
@@ -141,6 +169,10 @@ protected:
 	void StartArena();
 	bool RefreshClearedStateFromStory();
 	void ApplyClearedState();
+	void StartBossIntroPresentation();
+	void ShowNextIntroCamera();
+	void FinishBossIntroPresentation();
+	void RestoreIntroPlayerControl(bool bBlendBackToPawn);
 	void ActivateManagedBossesAfterIntro();
 	ABRBossBase* SpawnConfiguredBossIfNeeded();
 	FTransform GetConfiguredBossSpawnTransform() const;

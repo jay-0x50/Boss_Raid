@@ -8,21 +8,53 @@
 #include "Engine/Engine.h"
 #include "GameFramework/Character.h"
 #include "Kismet/GameplayStatics.h"
+#include "NiagaraComponent.h"
 #include "NiagaraFunctionLibrary.h"
 
 int32 ABRPatternBossBase::PickAttack(float PlayerDist) const
 {
-	const int32 PatternCount = AttackPatterns.Num();
-	for (int32 Offset = 1; Offset <= PatternCount; ++Offset)
+	TArray<int32, TInlineAllocator<8>> Candidates;
+	float TotalWeight = 0.0f;
+	for (int32 Index = 0; Index < AttackPatterns.Num(); ++Index)
 	{
-		const int32 Index = (LastPatternIndex + Offset) % PatternCount;
 		if (CanUseAttack(AttackPatterns[Index], PlayerDist))
+		{
+			Candidates.Add(Index);
+		}
+	}
+
+	if (Candidates.IsEmpty())
+	{
+		return INDEX_NONE;
+	}
+
+	// Keep the old no-repeat guarantee whenever another valid choice exists.
+	if (Candidates.Num() > 1)
+	{
+		Candidates.Remove(LastPatternIndex);
+	}
+
+	for (const int32 Index : Candidates)
+	{
+		TotalWeight += FMath::Max(AttackPatterns[Index].SelectionWeight, 0.0f);
+	}
+
+	if (TotalWeight <= KINDA_SMALL_NUMBER)
+	{
+		return Candidates[0];
+	}
+
+	float Roll = FMath::FRandRange(0.0f, TotalWeight);
+	for (const int32 Index : Candidates)
+	{
+		Roll -= FMath::Max(AttackPatterns[Index].SelectionWeight, 0.0f);
+		if (Roll <= 0.0f)
 		{
 			return Index;
 		}
 	}
 
-	return INDEX_NONE;
+	return Candidates.Last();
 }
 
 bool ABRPatternBossBase::CanUseAttack(const FBRBossPatternData& Attack, float PlayerDist) const
@@ -121,6 +153,60 @@ FVector ABRPatternBossBase::GetLockedDashDirection(const FBRBossPatternData& Pat
 	return Pattern.bDashAwayFromTarget ? -BaseDirection : BaseDirection;
 }
 
+FName ABRPatternBossBase::GetAnimationActionForStage(
+	const FBRBossPatternData& Pattern,
+	EBRBossAnimationStage Stage) const
+{
+	FName StageAction = NAME_None;
+	switch (Stage)
+	{
+	case EBRBossAnimationStage::PatternWindup:
+		StageAction = Pattern.WindupAnimationActionName;
+		break;
+	case EBRBossAnimationStage::PatternImpact:
+		StageAction = Pattern.ImpactAnimationActionName;
+		break;
+	case EBRBossAnimationStage::PatternRecovery:
+		StageAction = Pattern.RecoveryAnimationActionName;
+		break;
+	default:
+		break;
+	}
+
+	if (!StageAction.IsNone())
+	{
+		return StageAction;
+	}
+	if (!Pattern.AnimationActionName.IsNone())
+	{
+		return Pattern.AnimationActionName;
+	}
+	return Pattern.PatternName;
+}
+
+FVector ABRPatternBossBase::GetPatternEffectScale(
+	const FBRBossPatternData& Pattern,
+	const FVector& AuthoredScale) const
+{
+	if (!Pattern.bScaleEffectToHitShape)
+	{
+		return AuthoredScale;
+	}
+
+	const float ReferenceSize = FMath::Max(Pattern.EffectReferenceSize, 1.0f);
+	const float RadiusScale = FMath::Max(Pattern.Radius / ReferenceSize, 0.05f);
+	if (Pattern.PatternType == EBRBossPatternType::AOE)
+	{
+		return AuthoredScale * FVector(RadiusScale, RadiusScale, 1.0f);
+	}
+
+	const float AttackLength = Pattern.PatternType == EBRBossPatternType::Dash && !Pattern.bDashAwayFromTarget
+		? Pattern.DashDistance + Pattern.ForwardOffset
+		: Pattern.ForwardOffset;
+	const float LengthScale = FMath::Max(AttackLength / ReferenceSize, 0.05f);
+	return AuthoredScale * FVector(LengthScale, RadiusScale, 1.0f);
+}
+
 FTransform ABRPatternBossBase::GetPatternEffectTransform(
 	const FBRBossPatternData& Pattern,
 	float HeightOffset) const
@@ -130,59 +216,98 @@ FTransform ABRPatternBossBase::GetPatternEffectTransform(
 		return FTransform(GetActorRotation(), GetAOECenter(Pattern, HeightOffset));
 	}
 
-	const bool bIsRetreat = Pattern.PatternType == EBRBossPatternType::Dash && Pattern.bDashAwayFromTarget;
-	const bool bUseCurrentDashLocation = Pattern.PatternType == EBRBossPatternType::Dash && bAttackHasImpacted && !bIsRetreat;
-	FVector EffectOrigin = bHasActivePattern && !bUseCurrentDashLocation ? LockedAttackOrigin : GetActorLocation();
+	const bool bIsForwardDash = Pattern.PatternType == EBRBossPatternType::Dash && !Pattern.bDashAwayFromTarget;
+	FVector EffectOrigin = bHasActivePattern ? LockedAttackOrigin : GetActorLocation();
 	EffectOrigin.Z += HeightOffset;
-	const FVector EffectDirection = Pattern.PatternType == EBRBossPatternType::Dash && !bIsRetreat
+	const FVector EffectDirection = bIsForwardDash
 		? GetLockedDashDirection(Pattern)
 		: (bHasActivePattern ? LockedAttackDirection : GetActorForwardVector());
-	const FVector EffectLocation = EffectOrigin + (EffectDirection.GetSafeNormal2D() * Pattern.ForwardOffset);
+	const float AttackLength = bIsForwardDash
+		? Pattern.DashDistance + Pattern.ForwardOffset
+		: Pattern.ForwardOffset;
+	// Non-AOE damage is tested against a segment. Place and scale world-space
+	// effects around that same segment instead of at only its end point.
+	const FVector EffectLocation = EffectOrigin + (EffectDirection.GetSafeNormal2D() * AttackLength * 0.5f);
 	return FTransform(EffectDirection.Rotation(), EffectLocation);
 }
 
-void ABRPatternBossBase::SpawnPatternEffect(
+UNiagaraComponent* ABRPatternBossBase::SpawnPatternEffect(
 	UNiagaraSystem* Effect,
 	const FBRBossPatternData& Pattern,
 	FName SocketName,
 	float HeightOffset,
-	const FVector& Scale) const
+	const FVector& Scale,
+	bool bTelegraph)
 {
 	if (!Effect)
 	{
-		return;
+		return nullptr;
 	}
 
-	const bool bUseSocket = !Pattern.bDashAwayFromTarget
+	UNiagaraComponent* SpawnedComponent = nullptr;
+	const FVector EffectScale = GetPatternEffectScale(Pattern, Scale);
+	// Shape-sized dash/AOE systems must stay on the world-space damage volume.
+	// Socket attachment is reserved for forward melee effects such as bites/beams.
+	const bool bUseSocket = Pattern.PatternType == EBRBossPatternType::Melee
+		&& !Pattern.bDashAwayFromTarget
 		&& !SocketName.IsNone()
 		&& SkeletalMeshComponent
 		&& SkeletalMeshComponent->DoesSocketExist(SocketName);
 	if (bUseSocket)
 	{
-		UNiagaraFunctionLibrary::SpawnSystemAttached(
+		SpawnedComponent = UNiagaraFunctionLibrary::SpawnSystemAttached(
 			Effect,
 			SkeletalMeshComponent,
 			SocketName,
 			FVector::ZeroVector,
 			FRotator::ZeroRotator,
-			Scale,
+			EffectScale,
 			EAttachLocation::SnapToTarget,
 			true,
 			ENCPoolMethod::None,
 			true,
 			true);
-		return;
+	}
+	else
+	{
+		const FTransform EffectTransform = GetPatternEffectTransform(Pattern, HeightOffset);
+		SpawnedComponent = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+			this,
+			Effect,
+			EffectTransform.GetLocation(),
+			EffectTransform.Rotator(),
+			EffectScale,
+			true,
+			true);
 	}
 
-	const FTransform EffectTransform = GetPatternEffectTransform(Pattern, HeightOffset);
-	UNiagaraFunctionLibrary::SpawnSystemAtLocation(
-		this,
-		Effect,
-		EffectTransform.GetLocation(),
-		EffectTransform.Rotator(),
-		Scale,
-		true,
-		true);
+	if (SpawnedComponent)
+	{
+		SpawnedComponent->SetVariableFloat(TEXT("User.AttackRadiusCm"), Pattern.Radius);
+		SpawnedComponent->SetVariableFloat(TEXT("User.AttackRangeCm"), Pattern.ForwardOffset + Pattern.DashDistance);
+		SpawnedComponent->SetVariableFloat(TEXT("User.TelegraphTime"), Pattern.Windup);
+		SpawnedComponent->SetVariableBool(TEXT("User.IsTelegraph"), bTelegraph);
+		if (Pattern.bOverrideEffectColor)
+		{
+			SpawnedComponent->SetVariableLinearColor(TEXT("User.Color"), Pattern.EffectColor);
+		}
+		ActivePatternEffects.Add(SpawnedComponent);
+	}
+
+	return SpawnedComponent;
+}
+
+void ABRPatternBossBase::ClearPatternEffects()
+{
+	for (const TWeakObjectPtr<UNiagaraComponent>& Effect : ActivePatternEffects)
+	{
+		if (UNiagaraComponent* EffectComponent = Effect.Get())
+		{
+			EffectComponent->DeactivateImmediate();
+			EffectComponent->DestroyComponent();
+		}
+	}
+	ActivePatternEffects.Reset();
 }
 
 void ABRPatternBossBase::StartBossAttack(int32 PatternIndex)
@@ -199,6 +324,7 @@ void ABRPatternBossBase::StartBossAttack(int32 PatternIndex)
 	}
 
 	bAttackSlotClaimed = true;
+	ClearPatternEffects();
 	++AttackSequence;
 	ActivePatternIndex = PatternIndex;
 	LastPatternIndex = PatternIndex;
@@ -236,18 +362,21 @@ void ABRPatternBossBase::StartBossAttack(int32 PatternIndex)
 
 	NotifyBossAnimationStage(
 		EBRBossAnimationStage::PatternWindup,
-		Pattern.AnimationActionName.IsNone() ? Pattern.PatternName : Pattern.AnimationActionName);
+		GetAnimationActionForStage(Pattern, EBRBossAnimationStage::PatternWindup));
 	if (StartedAttackId != AttackSequence || !bIsAttacking || !bHasActivePattern)
 	{
 		return;
 	}
+
+	RequestBossCue(Pattern.WindupCueName);
 
 	SpawnPatternEffect(
 		ResolvePatternEffect(Pattern, true),
 		Pattern,
 		Pattern.TelegraphSocketName,
 		TelegraphHeightOffset,
-		Pattern.TelegraphEffectScale);
+		Pattern.TelegraphEffectScale,
+		true);
 
 	const float WindupTime = FMath::Max(Pattern.Windup, KINDA_SMALL_NUMBER);
 	if (bShowDebug && GEngine)
@@ -282,12 +411,15 @@ void ABRPatternBossBase::PerformBossAttack(int32 AttackId)
 	const FBRBossPatternData Pattern = ActivePatternSnapshot;
 	ActivePatternIndex = INDEX_NONE;
 	bAttackHasImpacted = true;
-	const FName AnimationActionName = Pattern.AnimationActionName.IsNone() ? Pattern.PatternName : Pattern.AnimationActionName;
-	NotifyBossAnimationStage(EBRBossAnimationStage::PatternImpact, AnimationActionName);
+	ClearPatternEffects();
+	NotifyBossAnimationStage(
+		EBRBossAnimationStage::PatternImpact,
+		GetAnimationActionForStage(Pattern, EBRBossAnimationStage::PatternImpact));
 	if (AttackId != AttackSequence || !bIsAttacking || !bHasActivePattern)
 	{
 		return;
 	}
+	RequestBossCue(Pattern.ImpactCueName);
 
 	FVector DashStart = GetActorLocation();
 	FVector DashEnd = DashStart;
@@ -304,7 +436,8 @@ void ABRPatternBossBase::PerformBossAttack(int32 AttackId)
 		Pattern,
 		Pattern.ImpactSocketName,
 		50.0f,
-		Pattern.ImpactEffectScale);
+		Pattern.ImpactEffectScale,
+		false);
 
 	const FVector TargetLocation = CurrentTarget->GetActorLocation();
 	const FVector FlatTarget(TargetLocation.X, TargetLocation.Y, 0.0f);
@@ -362,7 +495,7 @@ void ABRPatternBossBase::PerformBossAttack(int32 AttackId)
 	if (bTargetInsideHitShape)
 	{
 		const float EffectiveDamage = Pattern.Damage * (bIsEnraged ? EnrageDamageMultiplier : 1.0f);
-		const bool bParryableDamage = Pattern.PatternType == EBRBossPatternType::Melee && Pattern.bCanBeParried;
+		const bool bParryableDamage = Pattern.bCanBeParried;
 		const TSubclassOf<UDamageType> DamageTypeClass = bParryableDamage
 			? UBRParryableBossDamageType::StaticClass()
 			: UBRBossDamageType::StaticClass();
@@ -384,6 +517,92 @@ void ABRPatternBossBase::PerformBossAttack(int32 AttackId)
 			const FString AttackText = FString::Printf(TEXT("%s Hit! -%.0f HP"), *Pattern.PatternName.ToString(), AppliedDamage);
 			GEngine->AddOnScreenDebugMessage(2007, 1.0f, FColor::Red, AttackText);
 		}
+	}
+
+	if (AttackId != AttackSequence || !bIsAttacking || !bHasActivePattern)
+	{
+		return;
+	}
+
+	if (Pattern.FollowUpDelay > KINDA_SMALL_NUMBER && Pattern.FollowUpDamage > 0.0f)
+	{
+		FTimerDelegate FollowUpDelegate;
+		FollowUpDelegate.BindUObject(this, &ABRPatternBossBase::PerformBossFollowUp, AttackId);
+		GetWorldTimerManager().SetTimer(AttackFollowUpTimerHandle, FollowUpDelegate, Pattern.FollowUpDelay, false);
+		return;
+	}
+
+	BeginAttackRecovery(Pattern, AttackId);
+}
+
+void ABRPatternBossBase::PerformBossFollowUp(int32 AttackId)
+{
+	GetWorldTimerManager().ClearTimer(AttackFollowUpTimerHandle);
+	if (AttackId != AttackSequence || !bIsAttacking || !bHasActivePattern)
+	{
+		return;
+	}
+
+	if (!bCombatAIEnabled || bIsDead || bIsGroggy || bIsBeingExecuted || bIsPhaseTransitioning
+		|| !IsValid(CurrentTarget))
+	{
+		const bool bReturnToIdle = bCombatAIEnabled && !bIsDead && !bIsGroggy
+			&& !bIsBeingExecuted && !bIsPhaseTransitioning;
+		CancelBossAttack();
+		if (bReturnToIdle)
+		{
+			NotifyBossAnimationStage(EBRBossAnimationStage::Idle);
+		}
+		return;
+	}
+
+	const FBRBossPatternData Pattern = ActivePatternSnapshot;
+	FBRBossPatternData FollowUpPattern = Pattern;
+	FollowUpPattern.ForwardOffset = 0.0f;
+	FollowUpPattern.DashDistance = 0.0f;
+	FollowUpPattern.Radius = Pattern.FollowUpRadius > KINDA_SMALL_NUMBER ? Pattern.FollowUpRadius : Pattern.Radius;
+	FollowUpPattern.ImpactEffectScale = Pattern.ImpactEffectScale;
+
+	ClearPatternEffects();
+	const FName FollowUpAction = Pattern.FollowUpAnimationActionName.IsNone()
+		? GetAnimationActionForStage(Pattern, EBRBossAnimationStage::PatternImpact)
+		: Pattern.FollowUpAnimationActionName;
+	NotifyBossAnimationStage(EBRBossAnimationStage::PatternImpact, FollowUpAction);
+	if (AttackId != AttackSequence || !bIsAttacking || !bHasActivePattern)
+	{
+		return;
+	}
+	RequestBossCue(Pattern.FollowUpCueName.IsNone() ? Pattern.ImpactCueName : Pattern.FollowUpCueName);
+	SpawnPatternEffect(
+		ResolvePatternEffect(Pattern, false),
+		FollowUpPattern,
+		Pattern.ImpactSocketName,
+		50.0f,
+		Pattern.ImpactEffectScale,
+		false);
+
+	const FVector TargetLocation = CurrentTarget->GetActorLocation();
+	FVector HitDirection = FVector(TargetLocation - GetActorLocation()).GetSafeNormal2D();
+	const bool bTargetInsideFollowUp = FVector::Dist2D(GetActorLocation(), TargetLocation) <= FollowUpPattern.Radius;
+	float AppliedDamage = 0.0f;
+	if (bTargetInsideFollowUp)
+	{
+		const float EffectiveDamage = Pattern.FollowUpDamage * (bIsEnraged ? EnrageDamageMultiplier : 1.0f);
+		const TSubclassOf<UDamageType> DamageTypeClass = Pattern.bCanBeParried
+			? UBRParryableBossDamageType::StaticClass()
+			: UBRBossDamageType::StaticClass();
+		AppliedDamage = UGameplayStatics::ApplyDamage(
+			CurrentTarget,
+			EffectiveDamage,
+			GetController(),
+			this,
+			DamageTypeClass);
+	}
+
+	if (AppliedDamage > 0.0f)
+	{
+		ApplyPatternHitFeedback(CurrentTarget, FollowUpPattern, HitDirection);
+		OnPatternHit.Broadcast(FollowUpAction.IsNone() ? Pattern.PatternName : FollowUpAction);
 	}
 
 	BeginAttackRecovery(Pattern, AttackId);
@@ -455,7 +674,9 @@ void ABRPatternBossBase::StartAttackRecovery(int32 AttackId)
 	}
 
 	const FBRBossPatternData Pattern = ActivePatternSnapshot;
-	NotifyBossAnimationStage(EBRBossAnimationStage::PatternRecovery);
+	NotifyBossAnimationStage(
+		EBRBossAnimationStage::PatternRecovery,
+		GetAnimationActionForStage(Pattern, EBRBossAnimationStage::PatternRecovery));
 	if (AttackId != AttackSequence || !bIsAttacking || !bHasActivePattern)
 	{
 		return;
@@ -492,12 +713,14 @@ void ABRPatternBossBase::FinishBossAttack(int32 AttackId)
 
 	GetWorldTimerManager().ClearTimer(AttackWindupTimerHandle);
 	GetWorldTimerManager().ClearTimer(AttackRecoveryTimerHandle);
+	GetWorldTimerManager().ClearTimer(AttackFollowUpTimerHandle);
 	const FName PatternName = ActivePatternSnapshot.PatternName;
 	bIsAttacking = false;
 	bHasActivePattern = false;
 	bAttackHasImpacted = false;
 	ActivePatternIndex = INDEX_NONE;
 	ActivePatternSnapshot = FBRBossPatternData();
+	ClearPatternEffects();
 	NextAttackTime = GetWorld() ? GetWorld()->GetTimeSeconds() + MinAttackGap : LastAttackTime + MinAttackGap;
 	ReleaseAttackSlot();
 	NotifyBossAnimationStage(EBRBossAnimationStage::Idle);
@@ -509,11 +732,13 @@ void ABRPatternBossBase::CancelBossAttack()
 	++AttackSequence;
 	GetWorldTimerManager().ClearTimer(AttackWindupTimerHandle);
 	GetWorldTimerManager().ClearTimer(AttackRecoveryTimerHandle);
+	GetWorldTimerManager().ClearTimer(AttackFollowUpTimerHandle);
 	bIsAttacking = false;
 	bHasActivePattern = false;
 	bAttackHasImpacted = false;
 	ActivePatternIndex = INDEX_NONE;
 	ActivePatternSnapshot = FBRBossPatternData();
+	ClearPatternEffects();
 	ReleaseAttackSlot();
 }
 

@@ -56,6 +56,8 @@ bool ABRBossBase::BeginExecution(AActor* Executor)
 	bIsBeingExecuted = true;
 	bIsAttacking = false;
 	ClearBaseTimers();
+	NotifyBossAnimationStage(EBRBossAnimationStage::ExecutionReaction);
+	RequestBossCue(TEXT("Boss_ExecutionReaction"));
 	OnExecutionStarted.Broadcast(Executor);
 
 	if (bShowDebug && GEngine)
@@ -75,6 +77,7 @@ bool ABRBossBase::CompleteExecution(float Damage, AActor* Executor)
 
 	bIsBeingExecuted = false;
 	LastDamageCauser = Executor;
+	RequestBossCue(TEXT("Boss_ExecutionImpact"));
 	const bool bApplied = StatComponent->ApplyDamageToStats(Damage, 0.0f);
 	if (bApplied)
 	{

@@ -4,7 +4,9 @@ import unreal
 
 
 MAP_PATH = "/Game/Maps/L_Runtime_Field"
-CLEAN_BOULDER = "/Game/ThirdParty/BossEnvironment/PolyHavenLOD/Boulder01/boulder_01_LOD1"
+CLEAN_BOULDER = "/Game/ThirdParty/BossEnvironment/PolyHavenLOD/Boulder01/boulder_01_LOD2"
+FIELD_MATERIAL = "/Game/World/Environment/Materials/M_Floor_Field_Default"
+TEMPLATE_FLOOR = "/Engine/MapTemplates/SM_Template_Map_Floor"
 TERRAIN_ASSETS = {
     "Field1": "/Game/World/Environment/Terrain/SM_OpenField_Field1",
     "Field2": "/Game/World/Environment/Terrain/SM_OpenField_Field2",
@@ -76,8 +78,23 @@ def main():
     checkpoints = [actor for actor in explore if actor.get_actor_label().startswith("Explore_Checkpoint_")]
     map_fragments = [actor for actor in explore if actor.get_class().get_name() == "BRMapFragmentPickup"]
 
+    template_floor = by_label.get("Floor")
+    if not template_floor:
+        fail("Recoverable template Floor actor is missing")
+    template_component = template_floor.get_component_by_class(unreal.StaticMeshComponent)
+    template_mesh = template_component.static_mesh if template_component else None
+    if object_path(template_mesh).split(".", 1)[0] != TEMPLATE_FLOOR:
+        fail(f"Floor label no longer refers to the starter template slab: {object_path(template_mesh)}")
+    if (template_floor.get_actor_enable_collision()
+            or template_component.get_collision_enabled() != unreal.CollisionEnabled.NO_COLLISION
+            or template_component.is_visible()
+            or not template_component.get_editor_property("hidden_in_game")):
+        fail("Starter template Floor is visible or still blocks the rolling terrain")
+    if "RetiredTemplateFloor" not in {str(tag) for tag in template_floor.get_editor_property("tags")}:
+        fail("Starter template Floor is not marked as recoverably retired")
+
     expected = {
-        "explore": 131, "terrain": 3, "rocks": 29, "landmarks": 25,
+        "explore": 147, "terrain": 3, "rocks": 29, "landmarks": 28,
         "seals": 3, "lore": 5, "encounters": 49, "spawners": 7,
         "gates": 2, "checkpoints": 2, "map_fragments": 3,
     }
@@ -114,6 +131,8 @@ def main():
         "Explore_Landmark_CMDThreshold_Arch", "Explore_StoryGate_Python", "Explore_StoryGate_Vritra",
         "Explore_Checkpoint_Vritra", "Explore_Checkpoint_CMD",
         "Explore_MapFragment_Field1", "Explore_MapFragment_Field2", "Explore_MapFragment_Field3",
+        "Explore_Landmark_PythonRuin_TerminalL", "Explore_Landmark_PythonRuin_TerminalR",
+        "Explore_Landmark_PythonRuin_SealCore",
     ):
         if label not in by_label:
             fail(f"Missing route landmark: {label}")
@@ -228,6 +247,10 @@ def main():
         if (label.startswith("Demo_Env_") or label.startswith("Demo_Field_MainPath_") or label.startswith("Demo_Field_Cover_")) \
                 and actor.get_actor_enable_collision():
             fail(f"Prototype blockout actor still blocks the S route: {label}")
+        if label.startswith("EncounterBuild_"):
+            fail(f"Legacy x-axis encounter building remains in the open field: {label}")
+    if "Demo_Field_FieldSign" in by_label:
+        fail("Prototype RUNTIME FIELD debug sign remains in the presentation map")
 
     legacy_corridors = [actor.get_actor_label() for actor in explore if actor.get_actor_label().startswith(
         ("Explore_Path_", "Explore_Cliff_"))]
@@ -240,6 +263,10 @@ def main():
         terrain_mesh = component.get_editor_property("static_mesh") if component else None
         if object_path(terrain_mesh).split(".", 1)[0] != expected_path:
             fail(f"{route} is not using its rolling terrain mesh: {object_path(terrain_mesh)}")
+        if route == "Field1":
+            field_material = component.get_material(0)
+            if object_path(field_material).split(".", 1)[0] != FIELD_MATERIAL:
+                fail(f"Field1 reuses a boss-floor material: {object_path(field_material)}")
         if not actor.get_actor_enable_collision():
             fail(f"{route} rolling terrain has no collision")
         tags = {str(tag) for tag in actor.get_editor_property("tags")}
@@ -256,6 +283,55 @@ def main():
         body_setup = terrain_mesh.get_editor_property("body_setup")
         if body_setup.get_editor_property("collision_trace_flag") != unreal.CollisionTraceFlag.CTF_USE_COMPLEX_AS_SIMPLE:
             fail(f"{route} terrain is not using complex surface collision")
+
+    # Check the authored surfaces directly. Non-ground actors are ignored so a
+    # cave ceiling, landmark, or prop cannot conceal a hole left by retiring
+    # the starter template slab.
+    ground_labels = {
+        actor.get_actor_label() for actor in actors
+        if actor.get_actor_label().startswith("Explore_Terrain_")
+        or actor.get_actor_label().endswith("Arena_Floor")
+        or actor.get_actor_label() == "Story_Cave_Floor"
+    }
+    ground_actors = [actor for actor in actors if actor.get_actor_label() in ground_labels]
+    ignored_for_ground_trace = [actor for actor in actors if actor not in ground_actors]
+    ground_anchors = {
+        "Spawn": (1200.0, 0.0, 45.0),
+        "FirstCheckpoint": (2180.0, 520.0, 65.0),
+        "Field1Encounter": (2520.0, 1050.0, 90.0),
+        "Field1Upper": (3040.0, 3650.0, 150.0),
+        "PythonEntrance": (1820.0, 5200.0, 150.0),
+        "PythonCenter": (4300.0, 5200.0, 95.0),
+        "PythonExit": (6460.0, 5200.0, 150.0),
+        "Field2Descent": (6620.0, 1120.0, 185.0),
+        "VritraEntrance": (1820.0, -5200.0, 150.0),
+        "VritraCenter": (4300.0, -5200.0, 95.0),
+        "VritraExit": (6460.0, -5200.0, 150.0),
+        "Field3Collapse": (9020.0, -3120.0, 185.0),
+        "CMDEntrance": (12320.0, 0.0, 150.0),
+        "CMDCenter": (14800.0, 0.0, 95.0),
+    }
+    world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_editor_world()
+    trace_results = {}
+    for anchor, (x, y, expected_z) in ground_anchors.items():
+        result = unreal.SystemLibrary.line_trace_single(
+            world, unreal.Vector(x, y, expected_z + 350.0), unreal.Vector(x, y, expected_z - 650.0),
+            unreal.TraceTypeQuery.ECC_VISIBILITY, True, ignored_for_ground_trace,
+            unreal.DrawDebugTrace.NONE, True,
+        ).to_dict()
+        hit_actor = result.get("hit_actor")
+        hit_label = hit_actor.get_actor_label() if hit_actor else "None"
+        impact = result.get("impact_point")
+        if not result.get("blocking_hit") or hit_label not in ground_labels or not impact:
+            fail(f"Authored ground gap at {anchor}: hit={hit_label}, result={result}")
+        if abs(impact.z - expected_z) > 240.0:
+            fail(f"Authored ground is vertically implausible at {anchor}: z={impact.z:.1f}, expected={expected_z:.1f}")
+        trace_results[anchor] = (hit_label, impact.z)
+
+    checkpoint = by_label.get("Demo_Field_CheckpointBonfire")
+    checkpoint_ground_z = trace_results["FirstCheckpoint"][1]
+    if not checkpoint or not 40.0 <= checkpoint.get_actor_location().z - checkpoint_ground_z <= 180.0:
+        fail(f"First checkpoint is floating or buried: actor={checkpoint}, ground_z={checkpoint_ground_z:.1f}")
 
     clean_mesh = unreal.load_asset(CLEAN_BOULDER)
     if not clean_mesh:
@@ -291,6 +367,29 @@ def main():
         nearest_outcrop = min(nearest_outcrop, (distance, actor.get_actor_label()))
     if nearest_outcrop[0] < 800.0:
         fail(f"A sparse outcrop blocks the central traversal area: {nearest_outcrop}")
+
+    runtime_tree = by_label.get("Demo_Field_SymbolTree")
+    if not runtime_tree:
+        fail("The first Runtime Tree landmark is missing")
+    runtime_tree_location = runtime_tree.get_actor_location()
+    if math.hypot(runtime_tree_location.x - 3800.0, runtime_tree_location.y - 1600.0) > 10.0:
+        fail(f"Runtime Tree is outside the Field0-to-Field1 sightline: {runtime_tree_location}")
+    tree_tags = {str(tag) for tag in runtime_tree.get_editor_property("tags")}
+    if not {"RuntimeTreeLandmark", "Field1Sightline"}.issubset(tree_tags):
+        fail(f"Runtime Tree lacks sightline metadata: {tree_tags}")
+    if runtime_tree.get_actor_enable_collision():
+        fail("Runtime Tree landmark blocks the open traversal area")
+
+    for prefix, expected_count in (
+        ("Explore_Field1Guide_", 5),
+        ("Explore_Field1CableRoot_", 4),
+        ("Explore_Field1Terminal_", 4),
+    ):
+        authored = [actor for actor in explore if actor.get_actor_label().startswith(prefix)]
+        if len(authored) != expected_count:
+            fail(f"Field1 runtime identity actor count differs for {prefix}: {len(authored)}")
+        if any(actor.get_actor_enable_collision() for actor in authored):
+            fail(f"Field1 identity dressing blocks combat movement: {prefix}")
 
     hidden_positions = {
         "Story_HiddenFragment_2": (5230.0, -1620.0),

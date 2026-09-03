@@ -11,6 +11,8 @@
 #include "Animation/AnimationAsset.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
+#include "Kismet/GameplayStatics.h"
+#include "Sound/SoundBase.h"
 
 ABRBossBase::ABRBossBase()
 {
@@ -99,6 +101,9 @@ void ABRBossBase::BeginPlay()
 
 void ABRBossBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
+	ClearBaseTimers();
+	SetBossAnimationPlaying(false);
+
 	if (TeamCoordinator)
 	{
 		TeamCoordinator->UnregisterBoss(this);
@@ -180,22 +185,19 @@ void ABRBossBase::UpdateProceduralIdleMotion(float DeltaSeconds)
 	const bool bUseSkeletalMesh = bHasSkeletalMesh && (VisualMeshType == EBRBossVisualMeshType::SkeletalMesh || !bHasStaticMesh);
 	const bool bUseStaticMesh = bHasStaticMesh && !bUseSkeletalMesh;
 	const TObjectPtr<UAnimationAsset>* StageAnimation = StageAnimations.Find(CurrentAnimationStage);
+	const TObjectPtr<UAnimationAsset>* ActionAnimation = CurrentAnimationActionName.IsNone()
+		? nullptr
+		: ActionAnimations.Find(CurrentAnimationActionName);
 	const bool bHasStageAnimation = StageAnimation && StageAnimation->Get();
+	const bool bHasActionAnimation = ActionAnimation && ActionAnimation->Get();
 	const bool bHasAnimationBlueprint = bUseSkeletalMesh
 		&& SkeletalMeshComponent->GetAnimationMode() == EAnimationMode::AnimationBlueprint
 		&& SkeletalMeshComponent->GetAnimInstance();
-	const bool bNeedsFallback = bUseStaticMesh || (bUseSkeletalMesh && !bHasStageAnimation && !bHasAnimationBlueprint);
-	const bool bIsSafeFallbackStage = CurrentAnimationStage == EBRBossAnimationStage::Idle
-		|| CurrentAnimationStage == EBRBossAnimationStage::Move
-		|| CurrentAnimationStage == EBRBossAnimationStage::PatternRecovery;
-	const bool bCanUseFallback = bUseProceduralIdleFallback
-		&& bNeedsFallback
-		&& bIsSafeFallbackStage
-		&& bCombatAIEnabled
-		&& !bIsAttacking
-		&& !bIsGroggy
-		&& !bIsBeingExecuted
-		&& !bIsDead;
+	const bool bHasPlayableMappedAnimation = bUseSkeletalMesh
+		&& SkeletalMeshComponent->GetAnimationMode() == EAnimationMode::AnimationSingleNode
+		&& (bHasStageAnimation || bHasActionAnimation);
+	const bool bNeedsFallback = bUseStaticMesh
+		|| (bUseSkeletalMesh && !bHasPlayableMappedAnimation && !bHasAnimationBlueprint);
 
 	if (!bVisualRootBaseTransformCaptured)
 	{
@@ -205,24 +207,130 @@ void ABRBossBase::UpdateProceduralIdleMotion(float DeltaSeconds)
 
 	const FVector BaseLocation = VisualRootBaseRelativeTransform.GetLocation();
 	const FQuat BaseRotation = VisualRootBaseRelativeTransform.GetRotation();
-	if (!bCanUseFallback)
+	const FVector BaseScale = VisualRootBaseRelativeTransform.GetScale3D();
+	const float SafeDeltaSeconds = FMath::Max(DeltaSeconds, 0.0f);
+	ProceduralStageTime += SafeDeltaSeconds;
+
+	const bool bIsIdleStage = CurrentAnimationStage == EBRBossAnimationStage::Idle
+		|| CurrentAnimationStage == EBRBossAnimationStage::Move;
+	const bool bCanUseIdleFallback = bUseProceduralIdleFallback
+		&& bNeedsFallback
+		&& bIsIdleStage
+		&& bCombatAIEnabled
+		&& !bIsAttacking
+		&& !bIsGroggy
+		&& !bIsBeingExecuted
+		&& !bIsDead;
+
+	if (bCanUseIdleFallback)
 	{
-		ProceduralIdleBlendAlpha = 0.0f;
-		VisualRoot->SetRelativeLocationAndRotation(BaseLocation, BaseRotation.Rotator());
-		VisualRoot->SetRelativeScale3D(VisualRootBaseRelativeTransform.GetScale3D());
+		ProceduralIdleTime += SafeDeltaSeconds;
+		ProceduralIdleBlendAlpha = FMath::FInterpTo(ProceduralIdleBlendAlpha, 1.0f, SafeDeltaSeconds, 4.0f);
+		const float MotionPhase = ProceduralIdleTime * ProceduralIdleFrequency * 2.0f * PI;
+		const float BobOffset = FMath::Sin(MotionPhase) * ProceduralIdleBobAmplitude * ProceduralIdleBlendAlpha;
+		const float LeanAngle = FMath::Sin(MotionPhase * 0.5f) * ProceduralIdleLeanAngle * ProceduralIdleBlendAlpha;
+		const FVector LocalBob = BaseRotation.RotateVector(FVector(0.0f, 0.0f, BobOffset));
+		const FQuat LocalLean = FRotator(LeanAngle, 0.0f, 0.0f).Quaternion();
+		VisualRoot->SetRelativeLocationAndRotation(BaseLocation + LocalBob, (BaseRotation * LocalLean).Rotator());
+		VisualRoot->SetRelativeScale3D(BaseScale);
 		return;
 	}
 
-	ProceduralIdleTime += FMath::Max(DeltaSeconds, 0.0f);
-	ProceduralIdleBlendAlpha = FMath::FInterpTo(ProceduralIdleBlendAlpha, 1.0f, DeltaSeconds, 4.0f);
-	const float MotionPhase = ProceduralIdleTime * ProceduralIdleFrequency * 2.0f * PI;
-	const float BobOffset = FMath::Sin(MotionPhase) * ProceduralIdleBobAmplitude * ProceduralIdleBlendAlpha;
-	const float LeanAngle = FMath::Sin(MotionPhase * 0.5f) * ProceduralIdleLeanAngle * ProceduralIdleBlendAlpha;
+	ProceduralIdleBlendAlpha = 0.0f;
+	if (!bUseProceduralStageFallback || !bNeedsFallback)
+	{
+		VisualRoot->SetRelativeLocationAndRotation(BaseLocation, BaseRotation.Rotator());
+		VisualRoot->SetRelativeScale3D(BaseScale);
+		return;
+	}
 
-	const FVector LocalBob = BaseRotation.RotateVector(FVector(0.0f, 0.0f, BobOffset));
-	const FQuat LocalLean = FRotator(LeanAngle, 0.0f, 0.0f).Quaternion();
-	VisualRoot->SetRelativeLocationAndRotation(BaseLocation + LocalBob, (BaseRotation * LocalLean).Rotator());
-	VisualRoot->SetRelativeScale3D(VisualRootBaseRelativeTransform.GetScale3D());
+	FVector StageOffset = FVector::ZeroVector;
+	FRotator StageRotation = FRotator::ZeroRotator;
+	FVector StageScale = FVector::OneVector;
+	bool bApplyStageFallback = true;
+	switch (CurrentAnimationStage)
+	{
+	case EBRBossAnimationStage::Intro:
+	{
+		const float Alpha = FMath::InterpEaseOut(0.0f, 1.0f, FMath::Clamp(ProceduralStageTime / 0.7f, 0.0f, 1.0f), 2.0f);
+		StageOffset.Z = ProceduralAttackTravelDistance * 0.25f * Alpha;
+		StageRotation.Pitch = -ProceduralAttackLeanAngle * 0.6f * Alpha;
+		break;
+	}
+	case EBRBossAnimationStage::PatternWindup:
+	{
+		const float Alpha = FMath::InterpEaseInOut(0.0f, 1.0f, FMath::Clamp(ProceduralStageTime / 0.45f, 0.0f, 1.0f), 2.0f);
+		StageOffset.X = -ProceduralAttackTravelDistance * 0.55f * Alpha;
+		StageOffset.Z = -ProceduralAttackTravelDistance * 0.18f * Alpha;
+		StageRotation.Pitch = -ProceduralAttackLeanAngle * Alpha;
+		break;
+	}
+	case EBRBossAnimationStage::PatternImpact:
+	{
+		const float Alpha = 1.0f - FMath::Clamp(ProceduralStageTime / 0.28f, 0.0f, 1.0f);
+		StageOffset.X = ProceduralAttackTravelDistance * Alpha;
+		StageRotation.Pitch = ProceduralAttackLeanAngle * 0.8f * Alpha;
+		break;
+	}
+	case EBRBossAnimationStage::PatternRecovery:
+	{
+		const float Alpha = 1.0f - FMath::InterpEaseOut(0.0f, 1.0f, FMath::Clamp(ProceduralStageTime / 0.45f, 0.0f, 1.0f), 2.0f);
+		StageOffset.X = ProceduralAttackTravelDistance * 0.25f * Alpha;
+		StageRotation.Pitch = ProceduralAttackLeanAngle * 0.35f * Alpha;
+		break;
+	}
+	case EBRBossAnimationStage::Hit:
+	{
+		const float Alpha = 1.0f - FMath::Clamp(ProceduralStageTime / 0.18f, 0.0f, 1.0f);
+		StageOffset.X = -ProceduralAttackTravelDistance * 0.35f * Alpha;
+		StageRotation.Pitch = -ProceduralAttackLeanAngle * 0.65f * Alpha;
+		break;
+	}
+	case EBRBossAnimationStage::Groggy:
+	{
+		const float Alpha = FMath::InterpEaseOut(0.0f, 1.0f, FMath::Clamp(ProceduralStageTime / 0.25f, 0.0f, 1.0f), 2.0f);
+		StageOffset.Z = -ProceduralGroggyDropDistance * Alpha;
+		StageRotation.Pitch = -ProceduralAttackLeanAngle * 1.7f * Alpha;
+		StageRotation.Roll = FMath::Sin(ProceduralStageTime * 3.0f) * 2.5f;
+		break;
+	}
+	case EBRBossAnimationStage::PhaseTransition:
+	{
+		const float Pulse = 0.5f + (FMath::Sin(ProceduralStageTime * 7.0f) * 0.5f);
+		StageOffset.Z = ProceduralAttackTravelDistance * 0.2f * Pulse;
+		StageScale = FVector(1.0f + (Pulse * 0.035f));
+		break;
+	}
+	case EBRBossAnimationStage::ExecutionReaction:
+	{
+		const float Alpha = FMath::InterpEaseOut(0.0f, 1.0f, FMath::Clamp(ProceduralStageTime / 0.22f, 0.0f, 1.0f), 2.0f);
+		StageOffset.Z = -ProceduralGroggyDropDistance * 0.8f * Alpha;
+		StageRotation.Pitch = -ProceduralAttackLeanAngle * 2.2f * Alpha;
+		break;
+	}
+	case EBRBossAnimationStage::Death:
+	{
+		const float Alpha = FMath::InterpEaseInOut(0.0f, 1.0f, FMath::Clamp(ProceduralStageTime / 0.8f, 0.0f, 1.0f), 2.0f);
+		StageOffset.Z = -ProceduralGroggyDropDistance * 1.35f * Alpha;
+		StageRotation.Roll = ProceduralDeathRollAngle * Alpha;
+		break;
+	}
+	default:
+		bApplyStageFallback = false;
+		break;
+	}
+
+	if (!bApplyStageFallback)
+	{
+		VisualRoot->SetRelativeLocationAndRotation(BaseLocation, BaseRotation.Rotator());
+		VisualRoot->SetRelativeScale3D(BaseScale);
+		return;
+	}
+
+	const FVector WorldAlignedOffset = BaseRotation.RotateVector(StageOffset);
+	const FQuat LocalStageRotation = StageRotation.Quaternion();
+	VisualRoot->SetRelativeLocationAndRotation(BaseLocation + WorldAlignedOffset, (BaseRotation * LocalStageRotation).Rotator());
+	VisualRoot->SetRelativeScale3D(BaseScale * StageScale);
 }
 
 void ABRBossBase::SetBossAnimationPlaying(bool bShouldPlay)
@@ -244,7 +352,7 @@ void ABRBossBase::SetBossAnimationPlaying(bool bShouldPlay)
 
 void ABRBossBase::PlayBossStageAnimation(EBRBossAnimationStage Stage, FName ActionName)
 {
-	if (!SkeletalMeshComponent || SkeletalMeshComponent->GetAnimationMode() != EAnimationMode::AnimationSingleNode)
+	if (!SkeletalMeshComponent)
 	{
 		return;
 	}
@@ -278,12 +386,37 @@ void ABRBossBase::PlayBossStageAnimation(EBRBossAnimationStage Stage, FName Acti
 
 	if (!AnimationToPlay)
 	{
+		// Leaving an authored action for an unmapped stage (usually Idle) must
+		// clear the cached asset. Otherwise choosing the same non-looping action
+		// again later is mistaken for an animation that is still playing.
+		if (SkeletalMeshComponent->GetAnimationMode() == EAnimationMode::AnimationSingleNode)
+		{
+			SetBossAnimationPlaying(false);
+		}
+		CurrentBossAnimationAsset = nullptr;
 		return;
 	}
 
-	const bool bLoopAnimation = Stage == EBRBossAnimationStage::Idle || Stage == EBRBossAnimationStage::Move || Stage == EBRBossAnimationStage::Groggy;
-	if (CurrentBossAnimationAsset == AnimationToPlay && bLoopAnimation)
+	// Imported skeletal meshes commonly default to AnimationBlueprint mode even
+	// when no AnimBP is assigned. In that state the existing Stage/Action maps
+	// would otherwise be silently ignored and the procedural fallback disabled.
+	if (SkeletalMeshComponent->GetAnimationMode() == EAnimationMode::AnimationBlueprint
+		&& SkeletalMeshComponent->GetAnimInstance())
 	{
+		return;
+	}
+	if (SkeletalMeshComponent->GetAnimationMode() != EAnimationMode::AnimationSingleNode)
+	{
+		SkeletalMeshComponent->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+	}
+
+	const bool bLoopAnimation = Stage == EBRBossAnimationStage::Idle || Stage == EBRBossAnimationStage::Move || Stage == EBRBossAnimationStage::Groggy;
+	if (CurrentBossAnimationAsset == AnimationToPlay)
+	{
+		if (bLoopAnimation && !SkeletalMeshComponent->IsPlaying())
+		{
+			SkeletalMeshComponent->Play(true);
+		}
 		return;
 	}
 
@@ -295,6 +428,8 @@ void ABRBossBase::PlayBossStageAnimation(EBRBossAnimationStage Stage, FName Acti
 void ABRBossBase::NotifyBossAnimationStage(EBRBossAnimationStage Stage, FName ActionName)
 {
 	CurrentAnimationStage = Stage;
+	CurrentAnimationActionName = ActionName;
+	ProceduralStageTime = 0.0f;
 	PlayBossStageAnimation(Stage, ActionName);
 	OnAnimationStageChanged.Broadcast(Stage, ActionName);
 	BP_BossAnimationStageChanged(Stage, ActionName);
@@ -397,6 +532,26 @@ void ABRBossBase::PlayCameraFeedbackForActor(AActor* FeedbackActor, float ShakeS
 			true,
 			EDynamicForceFeedbackAction::Start);
 	}
+}
+
+void ABRBossBase::RequestBossCue(FName CueName)
+{
+	if (CueName.IsNone())
+	{
+		return;
+	}
+
+	if (const TObjectPtr<USoundBase>* FoundSound = BossSounds.Find(CueName); FoundSound && FoundSound->Get())
+	{
+		UGameplayStatics::PlaySoundAtLocation(
+			this,
+			FoundSound->Get(),
+			GetActorLocation(),
+			BossSoundVolumeMultiplier);
+	}
+
+	OnBossCueRequested.Broadcast(CueName, GetActorLocation());
+	BP_BossCueRequested(CueName, GetActorLocation());
 }
 
 void ABRBossBase::OnBossReset()

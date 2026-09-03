@@ -3,6 +3,7 @@
 #include "Player/Character/ExceptionCharacter.h"
 
 #include "Boss/Base/BRBossBase.h"
+#include "Animation/AnimMontage.h"
 #include "Camera/CameraComponent.h"
 #include "Engine/Engine.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -433,7 +434,12 @@ void AExceptionCharacter::StartExecution(ABRBossBase* Target)
 	SetActorRotation(FRotationMatrix::MakeFromX(FVector(ToTarget.X, ToTarget.Y, 0.0f)).Rotator());
 	Target->SetActorRotation(FRotationMatrix::MakeFromX(FVector(-ToTarget.X, -ToTarget.Y, 0.0f)).Rotator());
 
-	PlayOptionalMontage(ExecutionMontage);
+	ExecDmg = Target->GetMaxHP() * ExecDmgRate;
+	bExecutionDamageUsesNotify = false;
+	const bool bAnimationStarted = PlayOptionalMontage(ExecutionMontage);
+	const bool bDamageEventFiredDuringPlay = bExecutionDamageUsesNotify;
+	bExecutionDamageUsesNotify = bDamageEventFiredDuringPlay
+		|| (bAnimationStarted && AnimationUsesEvent(ExecutionMontage.Get(), EBRPlayerAnimEvent::ExecutionDamage));
 	StartRootSwing(true);
 	BP_ExecutionStarted(Target);
 
@@ -442,8 +448,10 @@ void AExceptionCharacter::StartExecution(ABRBossBase* Target)
 		GEngine->AddOnScreenDebugMessage(1011, 1.2f, FColor::Purple, TEXT("Player Execution"));
 	}
 
-	ExecDmg = Target->GetMaxHP() * ExecDmgRate;
-	GetWorldTimerManager().SetTimer(ExecHitTimer, this, &AExceptionCharacter::DoExecHit, FMath::Min(ExecHitTime, ExecTime * 0.85f), false);
+	if (!bExecutionDamageUsesNotify)
+	{
+		GetWorldTimerManager().SetTimer(ExecHitTimer, this, &AExceptionCharacter::DoExecHit, FMath::Min(ExecHitTime, ExecTime * 0.85f), false);
+	}
 	GetWorldTimerManager().SetTimer(ExecutionTimerHandle, this, &AExceptionCharacter::FinishExecution, ExecTime, false);
 }
 
@@ -468,6 +476,7 @@ void AExceptionCharacter::FinishExecution()
 	}
 
 	PendingExecutionTarget = nullptr;
+	bExecutionDamageUsesNotify = false;
 	bIsInvincible = false;
 	GetCharacterMovement()->SetMovementMode(MOVE_Walking);
 	SetCombatState(EBRPlayerCombatState::Idle);

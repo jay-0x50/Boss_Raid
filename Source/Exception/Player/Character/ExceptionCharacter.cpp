@@ -17,6 +17,7 @@
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Materials/MaterialInterface.h"
+#include "PhysicalMaterials/PhysicalMaterial.h"
 #include "Sound/SoundWaveProcedural.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -192,7 +193,15 @@ AExceptionCharacter::AExceptionCharacter()
 	static ConstructorHelpers::FObjectFinder<UAnimSequence> ComboTwo(TEXT("/Game/Characters/Mannequins/Anims/Unarmed/Attack/MM_Attack_02.MM_Attack_02"));
 	static ConstructorHelpers::FObjectFinder<UAnimSequence> ComboThree(TEXT("/Game/Characters/Mannequins/Anims/Unarmed/Attack/MM_Attack_03.MM_Attack_03"));
 	static ConstructorHelpers::FObjectFinder<UAnimSequence> HeavyAlt(TEXT("/Game/Characters/Mannequins/Anims/Unarmed/Attack/MM_ChargedAttack.MM_ChargedAttack"));
-	static ConstructorHelpers::FObjectFinder<UAnimMontage> HealUse(TEXT("/Game/Characters/Mannequins/Anims/Unarmed/Attack/AM_Player_Parry.AM_Player_Parry"));
+	static ConstructorHelpers::FObjectFinder<UAnimMontage> DefaultDodge(TEXT("/Game/Characters/Mannequins/Anims/Unarmed/Jump/AM_Player_Dodge.AM_Player_Dodge"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> HealUse(TEXT("/Game/Characters/Mannequins/Anims/Pistol/MM_Pistol_Reload.MM_Pistol_Reload"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> ParrySuccess(TEXT("/Game/Characters/Mannequins/Anims/Rifle/HitReact/MM_HitReact_Front_Lgt_04.MM_HitReact_Front_Lgt_04"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> HitFront(TEXT("/Game/Characters/Mannequins/Anims/Rifle/HitReact/MM_HitReact_Front_Lgt_01.MM_HitReact_Front_Lgt_01"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> HitBack(TEXT("/Game/Characters/Mannequins/Anims/Rifle/HitReact/MM_HitReact_Back_Med_01.MM_HitReact_Back_Med_01"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> HitLeft(TEXT("/Game/Characters/Mannequins/Anims/Rifle/HitReact/MM_HitReact_Front_Lgt_03.MM_HitReact_Front_Lgt_03"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> HitRight(TEXT("/Game/Characters/Mannequins/Anims/Rifle/HitReact/MM_HitReact_Front_Lgt_02.MM_HitReact_Front_Lgt_02"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> HeavyKnockback(TEXT("/Game/Characters/Mannequins/Anims/Rifle/HitReact/MM_HitReact_Front_Hvy_01.MM_HitReact_Front_Hvy_01"));
+	static ConstructorHelpers::FObjectFinder<UAnimSequence> Death(TEXT("/Game/Characters/Mannequins/Anims/Death/MM_Death_Back_01.MM_Death_Back_01"));
 	RootLightAnim = RootLight.Object;
 	RootHeavyAnim = RootHeavy.Object;
 	if (ComboOne.Succeeded())
@@ -208,7 +217,16 @@ AExceptionCharacter::AExceptionCharacter()
 		LightComboAnims.Add(ComboThree.Object);
 	}
 	HeavyAltAnim = HeavyAlt.Object;
-	HealMontage = HealUse.Object;
+	DodgeMontage = DefaultDodge.Object;
+	HealMontage = nullptr;
+	HealAnim = HealUse.Object;
+	ParrySuccessAnim = ParrySuccess.Object;
+	HitFrontAnim = HitFront.Object;
+	HitBackAnim = HitBack.Object;
+	HitLeftAnim = HitLeft.Object;
+	HitRightAnim = HitRight.Object;
+	HeavyKnockbackAnim = HeavyKnockback.Object;
+	DeathAnim = Death.Object;
 }
 
 void AExceptionCharacter::Tick(float DeltaSeconds)
@@ -317,16 +335,23 @@ void AExceptionCharacter::PlayRootAnim(bool bHeavy)
 	PlayAttackSequence(Anim, bHeavy ? HeavyAttackMontage.Get() : LightAttackMontage.Get(), bHeavy ? 2.1f : 1.9f);
 }
 
-void AExceptionCharacter::PlayAttackSequence(UAnimSequence* Anim, UAnimMontage* FallbackMontage, float Rate)
+bool AExceptionCharacter::PlayAttackSequence(UAnimSequence* Anim, UAnimMontage* FallbackMontage, float Rate)
 {
 	UAnimInstance* AnimBP = GetMesh() ? GetMesh()->GetAnimInstance() : nullptr;
 	if (!Anim || !AnimBP)
 	{
-		PlayOptionalMontage(FallbackMontage);
-		return;
+		return PlayOptionalMontage(FallbackMontage);
 	}
 
-	AnimBP->PlaySlotAnimationAsDynamicMontage(Anim, TEXT("DefaultSlot"), 0.06f, 0.10f, FMath::Max(0.1f, Rate), 1, -1.0f, 0.0f);
+	return AnimBP->PlaySlotAnimationAsDynamicMontage(
+		Anim,
+		TEXT("DefaultSlot"),
+		0.06f,
+		0.10f,
+		FMath::Max(0.1f, Rate),
+		1,
+		-1.0f,
+		0.0f) != nullptr;
 }
 
 void AExceptionCharacter::SetRootWeapon(bool bOn)
@@ -391,14 +416,31 @@ void AExceptionCharacter::UpdateStepSfx(float DeltaSeconds)
 	if (StepNow >= StepGap)
 	{
 		StepNow = FMath::Fmod(StepNow, FMath::Max(StepGap, 1.0f));
-		PlayStepSfx();
+		HandleAnimationEvent(EBRPlayerAnimEvent::Footstep);
 	}
 }
 
 void AExceptionCharacter::PlayStepSfx()
 {
+	FHitResult GroundHit;
+	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(PlayerFootstepSurface), false, this);
+	QueryParams.bReturnPhysicalMaterial = true;
+	const FVector TraceStart = GetActorLocation() + FVector(0.0f, 0.0f, 20.0f);
+	const FVector TraceEnd = TraceStart - FVector(0.0f, 0.0f, GetCapsuleComponent()->GetScaledCapsuleHalfHeight() + 55.0f);
+	if (UWorld* World = GetWorld())
+	{
+		World->LineTraceSingleByChannel(GroundHit, TraceStart, TraceEnd, ECC_Visibility, QueryParams);
+	}
+
+	const EPhysicalSurface SurfaceType = UGameplayStatics::GetSurfaceType(GroundHit);
+	const FName SurfaceName = GroundHit.PhysMaterial.IsValid()
+		? GroundHit.PhysMaterial->GetFName()
+		: FName(*FString::Printf(TEXT("SurfaceType_%d"), static_cast<int32>(SurfaceType)));
+	BP_PlayerFootstep(SurfaceName, GroundHit.bBlockingHit ? GroundHit.ImpactPoint : GetActorLocation());
+
 	USoundWaveProcedural* Sfx = MakePlayerSfx(this, EPlayerSfx::Step);
-	const float Pitch = bLeftStep ? 0.94f : 1.06f;
+	const float SurfacePitch = 0.98f + 0.015f * static_cast<float>(static_cast<uint8>(SurfaceType) % 4);
+	const float Pitch = (bLeftStep ? 0.94f : 1.06f) * SurfacePitch;
 	bLeftStep = !bLeftStep;
 	UGameplayStatics::PlaySoundAtLocation(this, Sfx, GetActorLocation(), StepVol, Pitch);
 }

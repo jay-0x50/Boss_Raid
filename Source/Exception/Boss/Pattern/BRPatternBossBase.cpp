@@ -129,7 +129,8 @@ void ABRPatternBossBase::OnBossPhaseChanged(EBRBossPhase NewPhase)
 		PhaseEffectPattern,
 		NAME_None,
 		TelegraphHeightOffset,
-		EffectScale);
+		EffectScale,
+		false);
 	PlayCameraFeedbackForActor(CurrentTarget, PhaseTransitionCameraShakeScale, 0.45f);
 
 	if (bShowDebug && GEngine)

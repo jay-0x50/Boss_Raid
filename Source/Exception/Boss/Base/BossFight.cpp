@@ -29,6 +29,11 @@ bool ABRBossBase::ReceiveCombatHit_Implementation(float Damage, float GroggyDama
 
 	StartProceduralHitReaction(DamageCauser);
 	PlayCameraFeedbackForActor(DamageCauser, BossReceivedHitCameraShakeScale, BossReceivedHitRumbleIntensity);
+	if (!bIsDead && !bIsGroggy && !bIsBeingExecuted && !bIsPhaseTransitioning && !bIsAttacking)
+	{
+		NotifyBossAnimationStage(EBRBossAnimationStage::Hit);
+		RequestBossCue(TEXT("Boss_Hit"));
+	}
 	RefreshPhaseByHP();
 	if (TeamCoordinator)
 	{
@@ -69,6 +74,10 @@ void ABRBossBase::ResetBoss()
 	LastDamageCauser = nullptr;
 	VerticalFallSpeed = 0.0f;
 	ProceduralHitReactionTime = 0.0f;
+	ProceduralStageTime = 0.0f;
+	CurrentAnimationStage = EBRBossAnimationStage::Idle;
+	CurrentAnimationActionName = NAME_None;
+	CurrentBossAnimationAsset = nullptr;
 	BossPhase = EBRBossPhase::Phase1;
 	ClearBaseTimers();
 	if (TeamCoordinator)
@@ -233,6 +242,7 @@ void ABRBossBase::HandleDead()
 	SetActorEnableCollision(false);
 	SetBossAnimationPlaying(false);
 	NotifyBossAnimationStage(EBRBossAnimationStage::Death);
+	RequestBossCue(TEXT("Boss_Death"));
 	OnBossDead.Broadcast();
 	OnBossDeadInternal();
 
@@ -267,6 +277,7 @@ void ABRBossBase::HandleGroggy()
 		BossAIController->StopMovement();
 	}
 	NotifyBossAnimationStage(EBRBossAnimationStage::Groggy);
+	RequestBossCue(TEXT("Boss_Groggy"));
 	OnBossGroggy.Broadcast();
 	OnBossGroggyInternal();
 	GetWorldTimerManager().SetTimer(GroggyTimerHandle, this, &ABRBossBase::RecoverFromGroggy, GroggyDuration, false);
@@ -403,6 +414,7 @@ void ABRBossBase::BeginPhaseTransition()
 	}
 
 	NotifyBossAnimationStage(EBRBossAnimationStage::PhaseTransition);
+	RequestBossCue(TEXT("Boss_PhaseTransition"));
 	if (!bIsPhaseTransitioning || bIsDead || !bCombatAIEnabled)
 	{
 		return;

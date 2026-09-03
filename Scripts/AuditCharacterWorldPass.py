@@ -56,10 +56,13 @@ def main():
 
     nel = [actor for actor in actors if actor.get_actor_label().startswith("Story_NelCompanion_")]
     buildings = [actor for actor in actors if actor.get_actor_label().startswith("EncounterBuild_")]
+    open_exploration = "Explore_Terrain_Field1" in by_label
     if len(nel) != 6:
         fail(f"Expected 6 Nel appearances, found {len(nel)}")
-    if len(buildings) != 28:
-        fail(f"Expected 28 encounter building actors, found {len(buildings)}")
+    if open_exploration and buildings:
+        fail(f"Legacy x-axis EncounterBuild actors overlap open exploration: {len(buildings)}")
+    if not open_exploration and len(buildings) != 28:
+        fail(f"Expected 28 encounter building actors in the prototype layout, found {len(buildings)}")
 
     for label, expected in EXPECTED_NEL_LOCATIONS.items():
         companion = by_label.get(label)
@@ -73,6 +76,10 @@ def main():
         spawner = by_label.get(label)
         if not spawner:
             fail(f"Missing spawner: {label}")
+        if open_exploration:
+            if bool(spawner.get_editor_property("should_spawn_enemies_immediately")):
+                fail(f"Legacy spawner remains active after open exploration rebuild: {label}")
+            continue
         key = label[-1]
         expected = EXPECTED_SPAWNER_LOCATIONS[key]
         actual = spawner.get_actor_location()
@@ -93,7 +100,7 @@ def main():
 
     unreal.log(
         "[AuditCharacterWorldPass] PASS: 3-step light combo assets, 2 heavy variants, "
-        f"{len(nel)} Nel appearances, 4 spawn buildings ({len(buildings)} actors)."
+        f"{len(nel)} Nel appearances, legacy buildings={len(buildings)}, open_exploration={open_exploration}."
     )
 
 

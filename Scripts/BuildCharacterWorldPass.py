@@ -116,6 +116,19 @@ def point_light(label, location, color, intensity=1800.0, radius=750.0):
 
 
 def build_spawn_buildings():
+    # The open exploration pass owns the active finite-wave camps. The older
+    # straight x-axis EncounterBuild shelters belong to the prototype route and
+    # visually cut across Field 0/Field 1 when both generators are run. Keep this
+    # script idempotent by retiring only its own prefix once open terrain exists.
+    if find("Explore_Terrain_Field1"):
+        removed = 0
+        for actor in list(actors()):
+            if actor.get_actor_label().startswith(ENCOUNTER_PREFIX):
+                if actor_subsystem().destroy_actor(actor):
+                    removed += 1
+        log(f"Open exploration terrain detected; removed {removed} legacy EncounterBuild actors.")
+        return 0
+
     fort = load_asset(FORT, unreal.StaticMesh)
     gate = load_asset(GATE, unreal.StaticMesh)
     floor = load_asset(FLOOR, unreal.StaticMesh)

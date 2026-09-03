@@ -12,10 +12,12 @@
 #include "Player/Controller/ExceptionPlayerController.h"
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Camera/CameraActor.h"
 #include "Engine/Engine.h"
 #include "Engine/GameInstance.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
+#include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
@@ -144,6 +146,7 @@ void ABRBossArenaTrigger::EndPlay(const EEndPlayReason::Type EndPlayReason)
 		}
 	}
 	GetWorldTimerManager().ClearTimer(BossIntroTimerHandle);
+	RestoreIntroPlayerControl(false);
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -203,6 +206,7 @@ void ABRBossArenaTrigger::ApplyClearedState()
 	bArenaStarted = false;
 	bArenaCleared = true;
 	GetWorldTimerManager().ClearTimer(BossIntroTimerHandle);
+	RestoreIntroPlayerControl(true);
 	HideBossStatusWidget();
 
 	if (TriggerBox)
@@ -320,9 +324,24 @@ void ABRBossArenaTrigger::StartArena()
 		Boss->StartBossIntro();
 	}
 
-	if (bPlayBossIntroBeforeAI && BossIntroDelay > 0.0f)
+	const bool bHasIntroCamera = IntroCameras.ContainsByPredicate([](const TObjectPtr<ACameraActor>& Camera)
 	{
-		GetWorldTimerManager().SetTimer(BossIntroTimerHandle, this, &ABRBossArenaTrigger::ActivateManagedBossesAfterIntro, BossIntroDelay, false);
+		return IsValid(Camera.Get());
+	});
+	const bool bShouldPlayFullIntro = bPlayBossIntroBeforeAI
+		&& bHasIntroCamera
+		&& (!bSkipFullIntroOnRetry || !bFullIntroWasShown);
+
+	if (bShouldPlayFullIntro)
+	{
+		StartBossIntroPresentation();
+	}
+	else if (bPlayBossIntroBeforeAI && BossIntroDelay > 0.0f)
+	{
+		const float WaitTime = bFullIntroWasShown && bSkipFullIntroOnRetry
+			? FMath::Min(BossIntroDelay, 0.35f)
+			: BossIntroDelay;
+		GetWorldTimerManager().SetTimer(BossIntroTimerHandle, this, &ABRBossArenaTrigger::ActivateManagedBossesAfterIntro, WaitTime, false);
 	}
 	else
 	{
@@ -335,12 +354,113 @@ void ABRBossArenaTrigger::StartArena()
 	}
 }
 
+void ABRBossArenaTrigger::StartBossIntroPresentation()
+{
+	IntroPlayerController = UGameplayStatics::GetPlayerController(this, 0);
+	IntroPlayerPawn = IntroPlayerController ? IntroPlayerController->GetPawn() : nullptr;
+	IntroCameraIndex = 0;
+
+	if (!IntroPlayerController || !IntroPlayerPawn)
+	{
+		GetWorldTimerManager().SetTimer(
+			BossIntroTimerHandle,
+			this,
+			&ABRBossArenaTrigger::ActivateManagedBossesAfterIntro,
+			FMath::Max(0.05f, BossIntroDelay),
+			false);
+		return;
+	}
+
+	IntroPlayerController->SetCinematicMode(true, false, true, true, true);
+	ShowNextIntroCamera();
+}
+
+void ABRBossArenaTrigger::ShowNextIntroCamera()
+{
+	if (!bArenaStarted || bArenaCleared || !IntroPlayerController)
+	{
+		RestoreIntroPlayerControl(true);
+		return;
+	}
+
+	while (IntroCameraIndex < IntroCameras.Num() && !IsValid(IntroCameras[IntroCameraIndex]))
+	{
+		++IntroCameraIndex;
+	}
+
+	if (IntroCameraIndex >= IntroCameras.Num())
+	{
+		FinishBossIntroPresentation();
+		return;
+	}
+
+	ACameraActor* Camera = IntroCameras[IntroCameraIndex];
+	const float BlendTime = IntroCameraIndex == 0 ? 0.0f : IntroCameraBlendTime;
+	IntroPlayerController->SetViewTargetWithBlend(Camera, BlendTime, VTBlend_Cubic);
+	bFullIntroWasShown = true;
+
+	const float DefaultShotTime = IntroCameras.Num() > 0
+		? FMath::Max(0.8f, BossIntroDelay / static_cast<float>(IntroCameras.Num()))
+		: FMath::Max(0.8f, BossIntroDelay);
+	const float ShotTime = IntroCameraTimes.IsValidIndex(IntroCameraIndex)
+		? FMath::Max(0.35f, IntroCameraTimes[IntroCameraIndex])
+		: DefaultShotTime;
+	++IntroCameraIndex;
+
+	GetWorldTimerManager().SetTimer(
+		BossIntroTimerHandle,
+		this,
+		&ABRBossArenaTrigger::ShowNextIntroCamera,
+		ShotTime,
+		false);
+}
+
+void ABRBossArenaTrigger::FinishBossIntroPresentation()
+{
+	if (!bArenaStarted || bArenaCleared)
+	{
+		RestoreIntroPlayerControl(true);
+		return;
+	}
+
+	if (IntroPlayerController && IntroPlayerPawn)
+	{
+		IntroPlayerController->SetViewTargetWithBlend(IntroPlayerPawn, IntroReturnBlendTime, VTBlend_Cubic);
+	}
+
+	GetWorldTimerManager().SetTimer(
+		BossIntroTimerHandle,
+		this,
+		&ABRBossArenaTrigger::ActivateManagedBossesAfterIntro,
+		FMath::Max(0.05f, IntroReturnBlendTime),
+		false);
+}
+
+void ABRBossArenaTrigger::RestoreIntroPlayerControl(bool bBlendBackToPawn)
+{
+	if (IntroPlayerController)
+	{
+		if (bBlendBackToPawn && IntroPlayerPawn)
+		{
+			IntroPlayerController->SetViewTargetWithBlend(IntroPlayerPawn, 0.2f, VTBlend_Cubic);
+		}
+		IntroPlayerController->SetCinematicMode(false, false, true, true, true);
+	}
+
+	IntroPlayerController = nullptr;
+	IntroPlayerPawn = nullptr;
+	IntroCameraIndex = 0;
+}
+
 void ABRBossArenaTrigger::ActivateManagedBossesAfterIntro()
 {
 	if (!bArenaStarted || bArenaCleared)
 	{
+		RestoreIntroPlayerControl(true);
 		return;
 	}
+
+	RestoreIntroPlayerControl(false);
 
 	TArray<ABRBossBase*> ManagedBosses;
 	BuildManagedBossList(ManagedBosses);
@@ -448,6 +568,7 @@ void ABRBossArenaTrigger::ResetArenaForRetry()
 
 	bArenaStarted = false;
 	GetWorldTimerManager().ClearTimer(BossIntroTimerHandle);
+	RestoreIntroPlayerControl(true);
 	HideBossStatusWidget();
 
 	TArray<ABRBossBase*> ManagedBosses;
@@ -488,6 +609,7 @@ void ABRBossArenaTrigger::HandleBossDefeated()
 
 	bArenaCleared = true;
 	GetWorldTimerManager().ClearTimer(BossIntroTimerHandle);
+	RestoreIntroPlayerControl(true);
 	HideBossStatusWidget();
 
 	if (!BossStoryId.IsNone())

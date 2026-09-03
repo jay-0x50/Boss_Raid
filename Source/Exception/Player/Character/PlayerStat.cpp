@@ -6,6 +6,8 @@
 #include "BRHiddenStorySubsystem.h"
 #include "BRPlayerGraveMarker.h"
 #include "ExceptionGameMode.h"
+#include "Animation/AnimMontage.h"
+#include "Animation/AnimSequence.h"
 #include "Components/PointLightComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/Engine.h"
@@ -439,6 +441,16 @@ bool AExceptionCharacter::BeginFlaskHeal(float HealAmount)
 	HealNow = 0.0f;
 	bHealApplied = false;
 	RuntimeFlask->SetHiddenInGame(false);
+	// The chalice and the right-hand blade share the grip socket. Keep the
+	// equipped weapon state, but hide both blades for the committed drink.
+	if (RootBladeR)
+	{
+		RootBladeR->SetHiddenInGame(true);
+	}
+	if (RootBladeL)
+	{
+		RootBladeL->SetHiddenInGame(true);
+	}
 	RuntimeFlask->SetRelativeLocation(FlaskBaseLocation);
 	RuntimeFlask->SetRelativeRotation(FlaskBaseRotation);
 	if (FlaskAura)
@@ -446,10 +458,25 @@ bool AExceptionCharacter::BeginFlaskHeal(float HealAmount)
 		FlaskAura->SetIntensity(240.0f);
 	}
 
-	PlayOptionalMontage(HealMontage);
-	GetWorldTimerManager().SetTimer(FlaskHealTimerHandle, this, &AExceptionCharacter::ApplyFlaskHeal, FlaskHealDelay, false);
+	const float HealPlayRate = HealAnim && FlaskUseTime > KINDA_SMALL_NUMBER
+		? HealAnim->GetPlayLength() / FlaskUseTime
+		: 1.0f;
+	bHealUsesNotify = false;
+	const bool bAnimationStarted = PlayAttackSequence(HealAnim.Get(), HealMontage.Get(), HealPlayRate);
+	const UAnimSequenceBase* HealAsset = HealAnim
+		? static_cast<UAnimSequenceBase*>(HealAnim.Get())
+		: static_cast<UAnimSequenceBase*>(HealMontage.Get());
+	const bool bHealEventFiredDuringPlay = bHealUsesNotify;
+	bHealUsesNotify = bHealEventFiredDuringPlay
+		|| (bAnimationStarted && AnimationUsesEvent(HealAsset, EBRPlayerAnimEvent::Heal));
+	if (!bHealUsesNotify)
+	{
+		GetWorldTimerManager().SetTimer(FlaskHealTimerHandle, this, &AExceptionCharacter::ApplyFlaskHeal, FlaskHealDelay, false);
+	}
 	GetWorldTimerManager().SetTimer(StateTimerHandle, this, &AExceptionCharacter::FinishFlaskHeal, FlaskUseTime, false);
-	UE_LOG(LogTemplateCharacter, Log, TEXT("Runtime Chalice: drink started, heal in %.2fs"), FlaskHealDelay);
+	UE_LOG(LogTemplateCharacter, Log, TEXT("Runtime Chalice: drink started, heal in %.2fs / Notify=%s"),
+		FlaskHealDelay,
+		bHealUsesNotify ? TEXT("true") : TEXT("false"));
 	return true;
 }
 
@@ -462,6 +489,10 @@ void AExceptionCharacter::ApplyFlaskHeal()
 
 	bHealApplied = true;
 	HealHP(PendingHealAmount);
+	if (!bHealUsesNotify)
+	{
+		BP_PlayerAnimationEvent(TEXT("Heal"));
+	}
 	PlayHealSfx();
 	if (FlaskAura)
 	{
@@ -509,11 +540,20 @@ void AExceptionCharacter::CancelFlaskHeal()
 	HealNow = 0.0f;
 	PendingHealAmount = 0.0f;
 	bHealApplied = false;
+	bHealUsesNotify = false;
 	if (RuntimeFlask)
 	{
 		RuntimeFlask->SetHiddenInGame(true);
 		RuntimeFlask->SetRelativeLocation(FlaskBaseLocation);
 		RuntimeFlask->SetRelativeRotation(FlaskBaseRotation);
+	}
+	if (RootBladeR)
+	{
+		RootBladeR->SetHiddenInGame(!bRootOn);
+	}
+	if (RootBladeL)
+	{
+		RootBladeL->SetHiddenInGame(!bRootOn);
 	}
 	if (FlaskAura)
 	{

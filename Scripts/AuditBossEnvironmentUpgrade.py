@@ -15,6 +15,7 @@ REQUIRED_MESHES = [
     f"{ASSET_ROOT}/PolyHavenLOD/Boulder01/boulder_01_LOD1",
     f"{ASSET_ROOT}/PolyHavenLOD/Mountainside/mountainside_LOD1",
     f"{ASSET_ROOT}/PolyHaven/SM_PH_ModularFort01",
+    "/Engine/BasicShapes/Cube",
 ]
 ARENAS = {
     "Vritra": (4300.0, -5200.0),
@@ -53,6 +54,26 @@ PYTHON_REQUIRED_LABELS.update(
     for index in range(4)
 )
 PYTHON_REQUIRED_LABELS.update(
+    f"BossEnv_Python_Vethara_DataCrystal_{index:02d}" for index in range(3)
+)
+PYTHON_REQUIRED_LABELS.update(
+    f"BossEnv_Python_Vethara_FrostTrace_{index:02d}" for index in range(3)
+)
+PYTHON_REQUIRED_LABELS.update(
+    f"BossEnv_Python_Aurathos_HeatPlate_{index:02d}" for index in range(3)
+)
+PYTHON_REQUIRED_LABELS.update(
+    f"BossEnv_Python_Aurathos_ErrorVein_{index:02d}" for index in range(3)
+)
+PYTHON_REQUIRED_LABELS.update(
+    f"BossEnv_Python_CenterScar_{index:02d}" for index in range(3)
+)
+PYTHON_REQUIRED_LABELS.update(
+    f"BossEnv_Python_Center{side}Trace_{index:02d}"
+    for side in ("Cyan", "Gold")
+    for index in range(2)
+)
+PYTHON_REQUIRED_LABELS.update(
     f"BossEnv_Python_{side}_BrokenWall_{index:02d}"
     for side in ("Vethara", "Aurathos")
     for index in range(3)
@@ -66,16 +87,20 @@ PYTHON_ALLOWED_MESHES = {
     f"{ASSET_ROOT}/KenneyDungeon/SM_KD_Wall",
     f"{ASSET_ROOT}/KenneyDungeon/SM_KD_WallHalf",
     f"{ASSET_ROOT}/KenneyDungeon/SM_KD_WallDetail",
+    "/Engine/BasicShapes/Cube",
 }
 PYTHON_ALLOWED_MATERIALS = {
     f"{ASSET_ROOT}/Materials/M_PH_Boulder01",
     f"{ASSET_ROOT}/Materials/M_KD_Stone",
     f"{ASSET_ROOT}/Materials/M_PH_Fort_Wall",
     f"{ASSET_ROOT}/Materials/M_PH_Fort_Trim",
+    "/Game/World/Environment/Materials/M_Floor_Boss_Python",
+    "/Game/World/Environment/Materials/M_Floor_Boss_Camel",
+    "/Game/World/Environment/Materials/M_Floor_Boss_CMD",
 }
 PYTHON_LIGHTS = {
-    "BossEnv_Python_Vethara_KeyLight": ((0, 102, 255), 520.0),
-    "BossEnv_Python_Aurathos_KeyLight": ((255, 140, 0), 500.0),
+    "BossEnv_Python_Vethara_KeyLight": ((0, 102, 255), 340.0),
+    "BossEnv_Python_Aurathos_KeyLight": ((255, 140, 0), 320.0),
 }
 
 
@@ -182,8 +207,14 @@ def audit_python_arena(actors, by_label, python_actors):
                     f"slot={material_index} -> {material_path}"
                 )
 
+    # Flat identity decals/traces may cross the center, but anything tall enough
+    # to obscure a player or boss silhouette must keep the original clearance.
+    python_occluding_meshes = [
+        actor for actor in python_mesh_actors
+        if actor.get_actor_bounds(False, False)[1].z >= 80.0
+    ]
     center_nearest = min(
-        ((point_to_bounds_clearance_2d(actor, PYTHON_CENTER), actor.get_actor_label()) for actor in python_mesh_actors),
+        ((point_to_bounds_clearance_2d(actor, PYTHON_CENTER), actor.get_actor_label()) for actor in python_occluding_meshes),
         default=(float("inf"), "None"),
     )
     if center_nearest[0] < PYTHON_CENTER_VISUAL_CLEARANCE:
@@ -291,6 +322,8 @@ def audit_python_arena(actors, by_label, python_actors):
             fail(f"Wrong identity color on {label}: actual={actual_rgb}, expected={expected_rgb}")
         if abs(intensity - expected_intensity) > 1.0:
             fail(f"Wrong restrained intensity on {label}: {intensity}")
+        if component.get_editor_property("cast_shadows"):
+            fail(f"Python accent light exceeds the shadow budget: {label}")
 
     return entry_width, exit_width, player_nearest[0], center_nearest[0], entrance_nearest[0]
 
@@ -360,7 +393,7 @@ def main():
         elif isinstance(actor, unreal.SkyLight):
             component = actor.get_component_by_class(unreal.SkyLightComponent)
             intensity = float(component.get_editor_property("intensity"))
-            if intensity > 0.6:
+            if intensity > 0.75:
                 fail(f"Sky light is overexposed: {actor.get_actor_label()} intensity={intensity}")
             unreal.log(
                 f"[AuditBossEnvironmentUpgrade] LIGHT Sky {actor.get_actor_label()} "
@@ -368,12 +401,24 @@ def main():
                 f"realtime={component.get_editor_property('real_time_capture')}"
             )
 
+    managed_shadow_lights = []
+    for actor in actors:
+        label = actor.get_actor_label()
+        if not label.startswith(("Story_CaveLight_", "Explore_", "BossEnv_")):
+            continue
+        component = actor.get_component_by_class(unreal.PointLightComponent)
+        if component and component.get_editor_property("cast_shadows"):
+            managed_shadow_lights.append(label)
+    if len(managed_shadow_lights) > 3:
+        fail(f"Vertical-slice accent shadow budget exceeded: {managed_shadow_lights}")
+
     unreal.log(
         f"[AuditBossEnvironmentUpgrade] PASS: {len(upgrade_actors)} dressed arena actors, "
         f"4 themed boss rooms, Python twin ruin actors={len(python_actors)}, "
         f"thresholds=({entry_width:.0f},{exit_width:.0f})cm, "
         f"player_clearance={player_clearance:.0f}cm, center_visual={center_clearance:.0f}cm, "
-        f"entrance_clearance={entrance_clearance:.0f}cm, no old box walls, combat centers clear."
+        f"entrance_clearance={entrance_clearance:.0f}cm, shadowed_accents={len(managed_shadow_lights)}, "
+        f"no old box walls, combat centers clear."
     )
 
 

@@ -48,8 +48,14 @@ protected:
 	void BP_SetBossExecutionState(int32 BossIndex, bool bCanBeExecuted);
 
 private:
+	void RefreshTeamBalanceStyle();
+	FLinearColor GetBossIdentityColor(int32 BossIndex, const FText* BossName = nullptr) const;
 	void SetNamedText(FName BaseName, int32 BossIndex, const FText& Text);
 	void SetNamedProgress(FName BaseName, int32 BossIndex, float Percent);
 	void SetNamedVisibility(FName BaseName, int32 BossIndex, bool bVisible);
 	class UWidget* FindIndexedWidget(FName BaseName, int32 BossIndex) const;
+
+	int32 VisibleBossCount = 0;
+	TArray<float> BossHPPercents;
+	TArray<FLinearColor> BossIdentityColors;
 };

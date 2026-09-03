@@ -34,6 +34,13 @@ required = [
     "Story_Cave_Floor",
     "Story_Cave_BackWall",
     "Story_Cave_Roof",
+    "Story_AwakeningPlatform_Core",
+    "Story_AwakeningPlatform_Ring_00",
+    "Story_AwakeningPlatform_Ring_06",
+    "Story_Checkpoint_Platform",
+    "Story_Checkpoint_Terminal_00",
+    "Story_Checkpoint_Terminal_01",
+    "Story_CaveLight_Checkpoint",
     "Story_Lore_Awakening",
     "Story_Nel_CaveExit",
     "Story_Nel_FirstRest",
@@ -57,6 +64,15 @@ player_start = by_label["Demo_Field_PlayerStart"]
 start = player_start.get_actor_location()
 if abs(start.x - 1200.0) > 1.0 or abs(start.y) > 1.0 or abs(start.z - 150.0) > 1.0:
     fail(f"Unexpected player start: {start}")
+same_spawn_starts = []
+for actor in actors:
+    if not isinstance(actor, unreal.PlayerStart):
+        continue
+    location = actor.get_actor_location()
+    if math.dist((location.x, location.y, location.z), (1200.0, 0.0, 150.0)) <= 10.0:
+        same_spawn_starts.append(actor.get_actor_label())
+if same_spawn_starts != ["Demo_Field_PlayerStart"]:
+    fail(f"Duplicate PlayerStarts remain at the awakening spawn: {same_spawn_starts}")
 
 route_beat_locations = {
     "Story_Nel_FirstRest": (2140.0, 400.0, 150.0),
@@ -127,10 +143,29 @@ for actor in story_actors:
             fail(f"Story mesh has yaw written into pitch/roll: {label} rotation={rotation}")
 
 post_process_settings = get_prop(by_label["Demo_SecondPass_PostProcess"], "settings")
-if get_prop(post_process_settings, "auto_exposure_bias") > -1.5:
-    fail("Runtime field exposure is too bright for the dark SF presentation")
-if get_prop(post_process_settings, "bloom_intensity") > 0.15:
+exposure_bias = float(get_prop(post_process_settings, "auto_exposure_bias"))
+if not -1.0 <= exposure_bias <= 0.0:
+    fail(f"Runtime field exposure crushes shadows or clips highlights: bias={exposure_bias}")
+if get_prop(post_process_settings, "bloom_intensity") > 0.18:
     fail("Runtime field bloom clips the blue/gold emissive accents")
+
+cave_lights = [
+    actor for actor in story_actors
+    if actor.get_actor_label().startswith("Story_CaveLight_")
+]
+shadowed_cave_lights = []
+for actor in cave_lights:
+    component = actor.get_component_by_class(unreal.PointLightComponent)
+    if not component:
+        fail(f"Cave light has no PointLightComponent: {actor.get_actor_label()}")
+    if component.get_editor_property("cast_shadows"):
+        shadowed_cave_lights.append(actor.get_actor_label())
+if shadowed_cave_lights != ["Story_CaveLight_Wake"]:
+    fail(f"Field0 accent shadow budget differs: {shadowed_cave_lights}")
+
+ring = [actor for actor in story_actors if actor.get_actor_label().startswith("Story_AwakeningPlatform_Ring_")]
+if len(ring) != 7 or any(actor.get_actor_enable_collision() for actor in ring):
+    fail(f"Awakening execution ring is incomplete or blocks movement: count={len(ring)}")
 
 for label in ("Story_Lore_Awakening", "Story_Lore_MemoryLeak", "Story_Lore_CMDApproach"):
     if get_prop(by_label[label], "log_text").is_empty():

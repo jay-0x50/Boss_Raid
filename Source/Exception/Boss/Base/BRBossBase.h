@@ -14,6 +14,7 @@ class UStaticMeshComponent;
 class USkeletalMeshComponent;
 class UAnimationAsset;
 class UCameraShakeBase;
+class USoundBase;
 class ABRBossTeamCoordinator;
 
 UENUM(BlueprintType)
@@ -45,12 +46,15 @@ enum class EBRBossAnimationStage : uint8
 	Idle,
 	Intro,
 	Move,
-	PatternWindup,
-	PatternImpact,
-	PatternRecovery,
+	PatternWindup UMETA(DisplayName="Windup"),
+	PatternImpact UMETA(DisplayName="Impact"),
+	PatternRecovery UMETA(DisplayName="Recovery"),
 	Groggy,
 	Death,
-	PhaseTransition
+	PhaseTransition,
+	// Appended to preserve the serialized values of existing Blueprint maps.
+	Hit,
+	ExecutionReaction
 };
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FBRBossStateEvent);
@@ -59,6 +63,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FBRBossExecutionEvent, AActor*, Exec
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FBRBossPhaseChanged, EBRBossPhase, NewPhase);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FBRBossEnrageChanged, bool, bEnraged);
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBRBossAnimationStageEvent, EBRBossAnimationStage, Stage, FName, ActionName);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FBRBossCueEvent, FName, CueName, FVector, WorldLocation);
 
 UCLASS(Abstract, Blueprintable, BlueprintType)
 class EXCEPTION_API ABRBossBase : public APawn, public IBRCombatInterface
@@ -208,6 +213,10 @@ public:
 	UPROPERTY(BlueprintAssignable, Category="Exception|Events")
 	FBRBossAnimationStageEvent OnAnimationStageChanged;
 
+	/** Designer-facing SFX hook. It fires even when no temporary sound is assigned. */
+	UPROPERTY(BlueprintAssignable, Category="Exception|Events")
+	FBRBossCueEvent OnBossCueRequested;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -229,6 +238,9 @@ protected:
 
 	UFUNCTION(BlueprintImplementableEvent, Category="Exception|Animation")
 	void BP_BossAnimationStageChanged(EBRBossAnimationStage Stage, FName ActionName);
+
+	UFUNCTION(BlueprintImplementableEvent, Category="Exception|Audio")
+	void BP_BossCueRequested(FName CueName, FVector WorldLocation);
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Components")
 	TObjectPtr<USceneComponent> SceneRoot;
@@ -320,6 +332,13 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation")
 	TMap<FName, TObjectPtr<UAnimationAsset>> ActionAnimations;
 
+	/** Optional authored sounds keyed by the cue names emitted by the combat code. */
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Exception|Audio")
+	TMap<FName, TObjectPtr<USoundBase>> BossSounds;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Audio", meta=(ClampMin="0.0"))
+	float BossSoundVolumeMultiplier = 1.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|Fallback")
 	bool bUseProceduralIdleFallback = true;
 
@@ -331,6 +350,22 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|Fallback", meta=(ClampMin="0.0", Units="deg"))
 	float ProceduralIdleLeanAngle = 1.0f;
+
+	/** Whole-body fallback only; authored quadruped animation always takes priority. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|Fallback")
+	bool bUseProceduralStageFallback = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|Fallback", meta=(ClampMin="0.0", Units="cm"))
+	float ProceduralAttackTravelDistance = 28.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|Fallback", meta=(ClampMin="0.0", Units="deg"))
+	float ProceduralAttackLeanAngle = 8.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|Fallback", meta=(ClampMin="0.0", Units="cm"))
+	float ProceduralGroggyDropDistance = 24.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|Fallback", meta=(ClampMin="0.0", Units="deg"))
+	float ProceduralDeathRollAngle = 72.0f;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category="Exception|Feedback")
 	TSubclassOf<UCameraShakeBase> CombatHitCameraShakeClass;
@@ -388,12 +423,14 @@ protected:
 
 	float VerticalFallSpeed = 0.0f;
 	float ProceduralIdleTime = 0.0f;
+	float ProceduralStageTime = 0.0f;
 	float ProceduralIdleBlendAlpha = 0.0f;
 	FTransform VisualRootBaseRelativeTransform = FTransform::Identity;
 	bool bVisualRootBaseTransformCaptured = false;
 	float ProceduralHitReactionTime = 0.0f;
 	FVector ProceduralHitReactionDirection = FVector::BackwardVector;
 	EBRBossAnimationStage CurrentAnimationStage = EBRBossAnimationStage::Idle;
+	FName CurrentAnimationActionName = NAME_None;
 
 	FTransform InitialBossTransform = FTransform::Identity;
 
@@ -421,6 +458,7 @@ protected:
 	void StartProceduralHitReaction(AActor* DamageCauser);
 	void UpdateProceduralHitReaction(float DeltaSeconds);
 	void PlayCameraFeedbackForActor(AActor* FeedbackActor, float ShakeScale, float RumbleIntensity) const;
+	void RequestBossCue(FName CueName);
 	void SetBossAnimationPlaying(bool bShouldPlay);
 	void PlayBossStageAnimation(EBRBossAnimationStage Stage, FName ActionName);
 	void ApplyGroundGravity(float DeltaSeconds);

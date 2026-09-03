@@ -5,6 +5,7 @@
 #include "BRPatternBossBase.generated.h"
 
 class UNiagaraSystem;
+class UNiagaraComponent;
 
 UENUM(BlueprintType)
 enum class EBRBossPatternType : uint8
@@ -27,6 +28,22 @@ struct FBRBossPatternData
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation")
 	FName AnimationActionName = NAME_None;
 
+	/** Optional stage-specific overrides. AnimationActionName remains the compatible fallback. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation")
+	FName WindupAnimationActionName = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation")
+	FName ImpactAnimationActionName = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation")
+	FName RecoveryAnimationActionName = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Audio")
+	FName WindupCueName = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Audio")
+	FName ImpactCueName = NAME_None;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Effects")
 	TObjectPtr<UNiagaraSystem> TelegraphEffect = nullptr;
 
@@ -44,6 +61,19 @@ struct FBRBossPatternData
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Effects")
 	FVector ImpactEffectScale = FVector::OneVector;
+
+	/** Scales the component footprint from the same radius/range used by damage checks. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Effects")
+	bool bScaleEffectToHitShape = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Effects", meta=(ClampMin="1.0", Units="cm"))
+	float EffectReferenceSize = 100.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Effects")
+	bool bOverrideEffectColor = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Effects", meta=(EditCondition="bOverrideEffectColor"))
+	FLinearColor EffectColor = FLinearColor::White;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Pattern")
 	EBRBossPatternType PatternType = EBRBossPatternType::Melee;
@@ -77,6 +107,9 @@ struct FBRBossPatternData
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Pattern", meta=(ClampMin="0.01", Units="s"))
 	float Cooldown = 1.8f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Pattern", meta=(ClampMin="0.0"))
+	float SelectionWeight = 1.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Pattern", meta=(ClampMin="1.0", Units="cm"))
 	float Radius = 90.0f;
 
@@ -97,6 +130,22 @@ struct FBRBossPatternData
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Feedback", meta=(ClampMin="0.0", ClampMax="1.0"))
 	float RumbleIntensity = 0.32f;
+
+	/** Optional second radial strike used by authored combo actions such as TailSweepFollowUp. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Pattern|FollowUp", meta=(ClampMin="0.0", Units="s"))
+	float FollowUpDelay = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Pattern|FollowUp", meta=(ClampMin="0.0"))
+	float FollowUpDamage = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Pattern|FollowUp", meta=(ClampMin="0.0", Units="cm"))
+	float FollowUpRadius = 0.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Pattern|FollowUp")
+	FName FollowUpAnimationActionName = NAME_None;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Pattern|FollowUp")
+	FName FollowUpCueName = NAME_None;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Pattern")
 	bool bDashAwayFromTarget = false;
@@ -220,6 +269,7 @@ protected:
 
 	FTimerHandle AttackWindupTimerHandle;
 	FTimerHandle AttackRecoveryTimerHandle;
+	FTimerHandle AttackFollowUpTimerHandle;
 	float LastAttackTime = -1000.0f;
 	float NextAttackTime = -1000.0f;
 	TMap<FName, float> LastPatternTimes;
@@ -233,6 +283,7 @@ protected:
 	bool bHasActivePattern = false;
 	bool bAttackHasImpacted = false;
 	bool bAttackSlotClaimed = false;
+	TArray<TWeakObjectPtr<UNiagaraComponent>> ActivePatternEffects;
 
 	void LookAtPlayer(float DeltaSeconds);
 	void RunToPlayer(float DeltaSeconds);
@@ -243,6 +294,7 @@ protected:
 	float GetRunSpeed() const;
 	void StartBossAttack(int32 PatternIndex);
 	void PerformBossAttack(int32 AttackId);
+	void PerformBossFollowUp(int32 AttackId);
 	void BeginAttackRecovery(const FBRBossPatternData& Pattern, int32 AttackId);
 	void StartAttackRecovery(int32 AttackId);
 	void FinishBossAttack(int32 AttackId);
@@ -251,9 +303,12 @@ protected:
 	void ApplyPatternHitFeedback(AActor* HitActor, const FBRBossPatternData& Pattern, const FVector& HitDirection);
 	FVector GetAOECenter(const FBRBossPatternData& Pattern, float HeightOffset) const;
 	FVector GetLockedDashDirection(const FBRBossPatternData& Pattern) const;
+	FName GetAnimationActionForStage(const FBRBossPatternData& Pattern, EBRBossAnimationStage Stage) const;
+	FVector GetPatternEffectScale(const FBRBossPatternData& Pattern, const FVector& AuthoredScale) const;
 	UNiagaraSystem* ResolvePatternEffect(const FBRBossPatternData& Pattern, bool bTelegraph) const;
 	FTransform GetPatternEffectTransform(const FBRBossPatternData& Pattern, float HeightOffset) const;
-	void SpawnPatternEffect(UNiagaraSystem* Effect, const FBRBossPatternData& Pattern, FName SocketName, float HeightOffset, const FVector& Scale) const;
+	UNiagaraComponent* SpawnPatternEffect(UNiagaraSystem* Effect, const FBRBossPatternData& Pattern, FName SocketName, float HeightOffset, const FVector& Scale, bool bTelegraph);
+	void ClearPatternEffects();
 	void DrawActivePatternTelegraph() const;
 	virtual void ClearBaseTimers() override;
 };

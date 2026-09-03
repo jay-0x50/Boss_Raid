@@ -10,10 +10,19 @@ FOLDER = "Story/Prologue"
 ROCK_MESH = "/Game/LevelPrototyping/Meshes/SM_ChamferCube"
 RAMP_MESH = "/Game/LevelPrototyping/Meshes/SM_Ramp"
 CUBE_MESH = "/Engine/BasicShapes/Cube.Cube"
+CYLINDER_MESH = "/Engine/BasicShapes/Cylinder.Cylinder"
+BOULDER_MESH = "/Game/ThirdParty/BossEnvironment/PolyHavenLOD/Boulder01/boulder_01_LOD2"
+WALL_DETAIL_MESH = "/Game/ThirdParty/BossEnvironment/KenneyDungeon/SM_KD_WallDetail"
+WALL_HALF_MESH = "/Game/ThirdParty/BossEnvironment/KenneyDungeon/SM_KD_WallHalf"
+FLOOR_DETAIL_MESH = "/Game/ThirdParty/BossEnvironment/KenneyDungeon/SM_KD_FloorDetail"
 FIELD_MAT = "/Game/World/Environment/Materials/M_Floor_Field_Default"
 WALL_MAT = "/Game/World/Environment/Materials/M_Wall_Corridor_Default"
 CODE_MAT = "/Game/World/Environment/Materials/M_Floor_Boss_Python"
 CMD_MAT = "/Game/World/Environment/Materials/M_Wall_Boss_CMD"
+STONE_MAT = "/Game/ThirdParty/BossEnvironment/Materials/M_KD_Stone"
+BOULDER_MAT = "/Game/ThirdParty/BossEnvironment/Materials/M_PH_Boulder01"
+FORT_WALL_MAT = "/Game/ThirdParty/BossEnvironment/Materials/M_PH_Fort_Wall"
+FORT_TRIM_MAT = "/Game/ThirdParty/BossEnvironment/Materials/M_PH_Fort_Trim"
 
 
 def log(message):
@@ -92,10 +101,12 @@ def spawn_or_update(label, actor_class, location, rotation=None, folder=FOLDER):
     actor.set_actor_location(location, False, False)
     actor.set_actor_rotation(target_rotation, False)
     actual_rotation = actor.get_actor_rotation()
+    def angle_delta(first, second):
+        return abs((first - second + 180.0) % 360.0 - 180.0)
     if (
-        abs(actual_rotation.pitch - target_rotation.pitch) > 0.05
-        or abs(actual_rotation.yaw - target_rotation.yaw) > 0.05
-        or abs(actual_rotation.roll - target_rotation.roll) > 0.05
+        angle_delta(actual_rotation.pitch, target_rotation.pitch) > 0.05
+        or angle_delta(actual_rotation.yaw, target_rotation.yaw) > 0.05
+        or angle_delta(actual_rotation.roll, target_rotation.roll) > 0.05
     ):
         raise RuntimeError(
             f"Rotation mismatch on {label}: requested={target_rotation}, actual={actual_rotation}"
@@ -105,7 +116,8 @@ def spawn_or_update(label, actor_class, location, rotation=None, folder=FOLDER):
 
 
 def make_mesh(label, location, scale, rotation=(0.0, 0.0, 0.0), mesh_path=ROCK_MESH,
-              material_path=WALL_MAT, collision=True, folder="Story/Prologue/Cave"):
+              material_path=WALL_MAT, collision=True, folder="Story/Prologue/Cave",
+              visible=True, cast_shadow=True):
     actor = spawn_or_update(
         label,
         unreal.StaticMeshActor.static_class(),
@@ -126,13 +138,20 @@ def make_mesh(label, location, scale, rotation=(0.0, 0.0, 0.0), mesh_path=ROCK_M
     component.set_collision_enabled(
         unreal.CollisionEnabled.QUERY_AND_PHYSICS if collision else unreal.CollisionEnabled.NO_COLLISION
     )
+    component.set_collision_profile_name(unreal.Name("BlockAll" if collision else "NoCollision"))
+    component.set_editor_property("cast_shadow", cast_shadow)
+    component.set_visibility(visible, True)
+    component.set_hidden_in_game(not visible, True)
     actor.set_actor_enable_collision(collision)
     actor.set_actor_scale3d(unreal.Vector(*scale))
     return actor
 
 
 def build_spawn_cave():
-    specs = [
+    # Keep a cheap, invisible shell for predictable third-person collision. The
+    # visible chamber is built from grounded stone and burned-server fragments,
+    # so the player no longer wakes inside a row of prototype blue boxes.
+    collision_shells = [
         ("BackWall", (360.0, 0.0, 365.0), (2.2, 14.0, 7.0), (0.0, 3.0, 0.0)),
         ("WallLeft", (1190.0, -720.0, 365.0), (16.5, 2.5, 6.8), (0.0, 1.0, -2.0)),
         ("WallRight", (1170.0, 735.0, 350.0), (16.0, 2.7, 6.5), (0.0, -2.0, 2.5)),
@@ -140,13 +159,40 @@ def build_spawn_cave():
         ("ExitPillarLeft", (2050.0, -570.0, 330.0), (3.2, 3.0, 6.0), (0.0, 18.0, -3.0)),
         ("ExitPillarRight", (2050.0, 575.0, 340.0), (3.0, 3.4, 6.2), (0.0, -14.0, 3.0)),
         ("ExitLintel", (2050.0, 0.0, 680.0), (3.0, 12.0, 1.8), (0.0, 2.0, 0.0)),
-        ("RockA", (640.0, -510.0, 220.0), (4.5, 3.5, 3.4), (8.0, 21.0, -10.0)),
-        ("RockB", (700.0, 530.0, 235.0), (4.0, 3.8, 3.8), (-6.0, 68.0, 9.0)),
-        ("RockC", (1460.0, -560.0, 205.0), (5.5, 2.8, 3.2), (5.0, 14.0, -8.0)),
-        ("RockD", (1530.0, 580.0, 235.0), (4.8, 3.0, 3.8), (-8.0, 52.0, 7.0)),
     ]
-    for name, location, scale, rotation in specs:
-        make_mesh(f"{PREFIX}Cave_{name}", location, scale, rotation)
+    for name, location, scale, rotation in collision_shells:
+        make_mesh(
+            f"{PREFIX}Cave_{name}", location, scale, rotation,
+            collision=True, visible=False, cast_shadow=False,
+            folder="Story/Prologue/CollisionShell",
+        )
+
+    for stale_name in ("RockA", "RockB", "RockC", "RockD"):
+        stale = find_actor(f"{PREFIX}Cave_{stale_name}")
+        if stale:
+            unreal.get_editor_subsystem(unreal.EditorActorSubsystem).destroy_actor(stale)
+
+    art_specs = [
+        ("BackMass_A", (250.0, -250.0, 165.0), (3.2, 3.2, 3.3), (8.0, 18.0, -7.0), BOULDER_MESH, BOULDER_MAT),
+        ("BackMass_B", (460.0, 350.0, 205.0), (4.2, 4.4, 4.2), (-6.0, 64.0, 8.0), BOULDER_MESH, BOULDER_MAT),
+        ("LeftMass_A", (900.0, -650.0, 160.0), (3.0, 3.4, 3.2), (5.0, 31.0, -8.0), BOULDER_MESH, BOULDER_MAT),
+        ("LeftMass_B", (1570.0, -665.0, 185.0), (3.5, 3.0, 3.6), (-4.0, 72.0, 6.0), BOULDER_MESH, BOULDER_MAT),
+        ("RightMass_A", (840.0, 675.0, 190.0), (3.3, 3.1, 3.7), (-7.0, 112.0, 6.0), BOULDER_MESH, BOULDER_MAT),
+        ("RightMass_B", (1520.0, 680.0, 170.0), (3.2, 3.5, 3.3), (6.0, 145.0, -7.0), BOULDER_MESH, BOULDER_MAT),
+        # Tie the upper mass into the right wall instead of suspending one
+        # isolated boulder above the awakening platform.
+        ("RoofMass", (1120.0, 580.0, 300.0), (4.2, 2.4, 3.2), (-2.0, 25.0, 8.0), BOULDER_MESH, BOULDER_MAT),
+        ("ServerMonolith_L", (820.0, -480.0, 170.0), (0.58, 0.50, 1.45), (-4.0, 12.0, -4.0), WALL_DETAIL_MESH, FORT_WALL_MAT),
+        ("ServerMonolith_R", (910.0, 475.0, 165.0), (0.52, 0.56, 1.32), (3.0, -9.0, 5.0), WALL_DETAIL_MESH, FORT_WALL_MAT),
+        ("ExitFrame_L", (1980.0, -505.0, 165.0), (0.72, 0.62, 1.35), (0.0, 16.0, -3.0), WALL_HALF_MESH, STONE_MAT),
+        ("ExitFrame_R", (1980.0, 510.0, 170.0), (0.68, 0.66, 1.42), (0.0, -14.0, 3.0), WALL_HALF_MESH, STONE_MAT),
+    ]
+    for name, location, scale, rotation, mesh_path, material_path in art_specs:
+        make_mesh(
+            f"{PREFIX}NecroCave_{name}", location, scale, rotation,
+            mesh_path=mesh_path, material_path=material_path, collision=False,
+            folder="Story/Prologue/RuntimeNecropolis",
+        )
 
     # A dark stone bed masks the original flat slab inside the awakening room.
     make_mesh(
@@ -157,12 +203,41 @@ def build_spawn_cave():
         folder="Story/Prologue/Cave",
     )
 
-    # Thin emissive strips form the boot seal around Hendel without blocking movement.
+    # A broken octagonal execution ring frames Hendel while leaving an open gap
+    # toward the exit. It is presentation-only so it cannot snag dodge movement.
+    make_mesh(
+        f"{PREFIX}AwakeningPlatform_Core",
+        (1200.0, 0.0, 55.0),
+        (1.30, 1.30, 0.65),
+        (0.0, 45.0, 0.0),
+        mesh_path=FLOOR_DETAIL_MESH,
+        material_path=STONE_MAT,
+        collision=False,
+        folder="Story/Prologue/AwakeningPlatform",
+    )
+    ring_angles = (42.0, 88.0, 136.0, 181.0, 226.0, 271.0, 316.0)
+    for index, angle in enumerate(ring_angles):
+        radians = math.radians(angle)
+        radius = 315.0 + (18.0 if index % 3 == 0 else -8.0)
+        make_mesh(
+            f"{PREFIX}AwakeningPlatform_Ring_{index:02d}",
+            (1200.0 + math.cos(radians) * radius, math.sin(radians) * radius, 70.0 + (index % 2) * 4.0),
+            (1.35 if index != 5 else 0.90, 0.32, 0.08),
+            (0.0, angle + 90.0, (-3.5, 2.0, 0.0)[index % 3]),
+            mesh_path=WALL_HALF_MESH,
+            material_path=STONE_MAT,
+            collision=False,
+            folder="Story/Prologue/AwakeningPlatform",
+        )
+
+    # Restrained code traces point east from the execution ring toward the exit.
     line_specs = [
-        ((1050.0, -230.0, 48.0), (5.0, 0.06, 0.03), (0.0, 0.0, 0.0)),
-        ((1050.0, 230.0, 48.0), (5.0, 0.06, 0.03), (0.0, 0.0, 0.0)),
-        ((820.0, 0.0, 48.0), (0.06, 4.6, 0.03), (0.0, 0.0, 0.0)),
-        ((1280.0, 0.0, 48.0), (0.06, 4.6, 0.03), (0.0, 0.0, 0.0)),
+        ((1110.0, -185.0, 78.0), (4.4, 0.045, 0.018), (0.0, 0.0, 0.0)),
+        ((1110.0, 190.0, 78.0), (4.3, 0.045, 0.018), (0.0, 0.0, 0.0)),
+        ((870.0, -5.0, 78.0), (0.045, 3.6, 0.018), (0.0, 0.0, 0.0)),
+        ((1380.0, 0.0, 78.0), (0.045, 3.3, 0.018), (0.0, 0.0, 0.0)),
+        ((1610.0, -92.0, 67.0), (4.0, 0.035, 0.014), (0.0, 7.0, 0.0)),
+        ((1830.0, 105.0, 67.0), (3.0, 0.035, 0.014), (0.0, -9.0, 0.0)),
     ]
     for index, (location, scale, rotation) in enumerate(line_specs):
         make_mesh(
@@ -174,6 +249,47 @@ def build_spawn_cave():
             material_path=CODE_MAT,
             collision=False,
             folder="Story/Prologue/CodeSeal",
+        )
+
+
+def build_first_checkpoint_frame():
+    checkpoint = find_actor("Demo_Field_CheckpointBonfire")
+    if checkpoint:
+        checkpoint.set_actor_location(unreal.Vector(2180.0, 520.0, 150.0), False, False)
+        checkpoint.set_actor_rotation(make_rotator(yaw=28.0), False)
+        checkpoint.set_actor_scale3d(unreal.Vector(0.88, 0.88, 0.88))
+
+    make_mesh(
+        f"{PREFIX}Checkpoint_Platform",
+        (2180.0, 520.0, 68.0),
+        (0.72, 0.72, 0.65),
+        (0.0, 28.0, 0.0),
+        mesh_path=FLOOR_DETAIL_MESH,
+        material_path=STONE_MAT,
+        collision=False,
+        folder="Story/Prologue/FirstCheckpoint",
+    )
+    for index, (x, y, yaw) in enumerate(((1995.0, 660.0, 22.0), (2345.0, 350.0, -18.0))):
+        make_mesh(
+            f"{PREFIX}Checkpoint_Terminal_{index:02d}",
+            (x, y, 125.0),
+            (0.22, 0.25, 0.55),
+            (0.0, yaw, 0.0),
+            mesh_path=WALL_DETAIL_MESH,
+            material_path=STONE_MAT,
+            collision=False,
+            folder="Story/Prologue/FirstCheckpoint",
+        )
+    for index, (location, yaw) in enumerate((((2055.0, 420.0, 80.0), 26.0), ((2305.0, 615.0, 80.0), 26.0))):
+        make_mesh(
+            f"{PREFIX}Checkpoint_CodeLine_{index:02d}",
+            location,
+            (2.0, 0.035, 0.015),
+            (0.0, yaw, 0.0),
+            mesh_path=CUBE_MESH,
+            material_path=CODE_MAT,
+            collision=False,
+            folder="Story/Prologue/FirstCheckpoint",
         )
 
 
@@ -241,7 +357,7 @@ def look_rotation(camera_location, target_location):
 
 def build_cameras_and_intro():
     shots = [
-        ((620.0, -500.0, 285.0), (1200.0, 0.0, 130.0), 55.0),
+        ((720.0, -180.0, 250.0), (1320.0, 40.0, 125.0), 55.0),
         ((1510.0, 520.0, 330.0), (2060.0, 0.0, 230.0), 62.0),
         ((2010.0, -300.0, 300.0), (1200.0, 0.0, 135.0), 48.0),
     ]
@@ -297,10 +413,11 @@ def build_cameras_and_intro():
 
 def build_lights():
     light_specs = [
-        ("Wake", (1000.0, 0.0, 360.0), make_color(25, 150, 255), 1500.0, 780.0),
-        ("Exit", (1940.0, 0.0, 420.0), make_color(255, 190, 115), 1800.0, 900.0),
+        ("Wake", (1020.0, 0.0, 330.0), make_color(35, 132, 210), 520.0, 720.0, True),
+        ("Exit", (1940.0, 0.0, 360.0), make_color(205, 170, 120), 340.0, 760.0, False),
+        ("Checkpoint", (2180.0, 520.0, 270.0), make_color(90, 190, 235), 185.0, 560.0, False),
     ]
-    for name, location, color, intensity, radius in light_specs:
+    for name, location, color, intensity, radius, cast_shadows in light_specs:
         light = spawn_or_update(
             f"{PREFIX}CaveLight_{name}",
             unreal.PointLight.static_class(),
@@ -309,10 +426,11 @@ def build_lights():
         )
         component = get_component(light, unreal.PointLightComponent)
         if component:
+            set_prop(component, "mobility", unreal.ComponentMobility.STATIONARY)
             set_prop(component, "intensity", intensity)
             set_prop(component, "attenuation_radius", radius)
             set_prop(component, "light_color", color)
-        set_prop(component, "cast_shadows", True)
+            set_prop(component, "cast_shadows", cast_shadows)
 
 
 def tune_post_process():
@@ -322,11 +440,19 @@ def tune_post_process():
         return
 
     settings = post_process.get_editor_property("settings")
-    # The imported emissive props are intentionally vivid. Pull exposure and
-    # bloom back so blue/gold accents retain detail instead of clipping white.
-    set_prop(settings, "auto_exposure_bias", -2.2, required=True)
-    set_prop(settings, "bloom_intensity", 0.08, required=True)
-    set_prop(settings, "vignette_intensity", 0.36, required=True)
+    # Preserve dark ambience without crushing traversal and combat information.
+    # Local accent lights are budgeted separately, so a severe global -2.2 EV
+    # compensation is no longer necessary.
+    set_prop(settings, "override_auto_exposure_bias", True)
+    set_prop(settings, "auto_exposure_bias", -0.65, required=True)
+    set_prop(settings, "override_bloom_intensity", True)
+    set_prop(settings, "bloom_intensity", 0.12, required=True)
+    set_prop(settings, "override_vignette_intensity", True)
+    set_prop(settings, "vignette_intensity", 0.24, required=True)
+    set_prop(settings, "override_auto_exposure_speed_up", True)
+    set_prop(settings, "auto_exposure_speed_up", 2.0)
+    set_prop(settings, "override_auto_exposure_speed_down", True)
+    set_prop(settings, "auto_exposure_speed_down", 1.0)
     post_process.set_editor_property("settings", settings)
 
 
@@ -340,6 +466,10 @@ def make_lore(label, location, title, text, show_time=4.2):
     set_prop(actor, "log_text", text, required=True)
     set_prop(actor, "show_time", show_time, required=True)
     set_prop(actor, "bTriggerOnce", True, required=True)
+    preview = actor.get_component_by_class(unreal.StaticMeshComponent)
+    if preview:
+        preview.set_visibility(False, True)
+        preview.set_hidden_in_game(True, True)
     return actor
 
 
@@ -355,6 +485,10 @@ def make_nel(label, location, line, request_id="None", completes=False, hidden_h
     set_prop(actor, "bIsHiddenRequestHint", hidden_hint, required=True)
     set_prop(actor, "bTriggerOnce", True, required=True)
     set_prop(actor, "bDestroyOnComplete", False)
+    preview = actor.get_component_by_class(unreal.StaticMeshComponent)
+    if preview:
+        preview.set_visibility(False, True)
+        preview.set_hidden_in_game(True, True)
     return actor
 
 
@@ -429,6 +563,12 @@ def build_story_beats():
     }
     for label, line in clean_nel_lines.items():
         set_prop(find_actor(label), "display_line", line, required=True)
+
+    # Companion beats reveal themselves through ABRNelCompanion::Appear; keep
+    # every staged copy out of the persistent world until that call occurs.
+    for actor in all_actors():
+        if actor.get_actor_label().startswith("Story_NelCompanion_"):
+            actor.set_actor_hidden_in_game(True)
 
 
 def build_hidden_fragments():
@@ -517,11 +657,29 @@ def set_player_start():
     player_start.set_actor_location(unreal.Vector(1200.0, 0.0, 150.0), False, False)
     player_start.set_actor_rotation(make_rotator(), False)
 
+    # The prototype map shipped with another PlayerStart at the exact same
+    # transform. Remove only same-position duplicates; starts elsewhere remain
+    # untouched so this cleanup cannot delete user-authored test spawns.
+    expected = player_start.get_actor_location()
+    for actor in list(all_actors()):
+        if actor == player_start or not isinstance(actor, unreal.PlayerStart):
+            continue
+        location = actor.get_actor_location()
+        distance = math.sqrt(
+            (location.x - expected.x) ** 2
+            + (location.y - expected.y) ** 2
+            + (location.z - expected.z) ** 2
+        )
+        if distance <= 10.0:
+            log(f"Removed duplicate PlayerStart at the authored awakening spawn: {actor.get_actor_label()}")
+            unreal.get_editor_subsystem(unreal.EditorActorSubsystem).destroy_actor(actor)
+
 
 def main():
     load_map()
     set_player_start()
     build_spawn_cave()
+    build_first_checkpoint_frame()
     build_rolling_terrain()
     build_lights()
     tune_post_process()

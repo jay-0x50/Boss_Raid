@@ -3,6 +3,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "Animation/BRPlayerAnimNotifies.h"
 #include "BRInventoryTypes.h"
 #include "GameFramework/Character.h"
 #include "Logging/LogMacros.h"
@@ -14,6 +15,7 @@ class UInputAction;
 class UInputMappingContext;
 class UAnimMontage;
 class UAnimSequence;
+class UAnimSequenceBase;
 class UMaterialInstanceDynamic;
 class UBRInventoryComponent;
 class UStaticMeshComponent;
@@ -267,11 +269,12 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Movement", meta=(ClampMin="0.05", Units="s"))
 	float SprintHoldTime = 0.22f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Dodge", meta=(ClampMin="0.0", Units="cm"))
-	float RollVisualLift = 18.0f;
-
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Dodge", meta=(ClampMin="40.0", Units="cm"))
 	float RollCapsuleHalfHeight = 62.0f;
+
+	/** Damage at or above this value uses the committed knockback reaction. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Hit", meta=(ClampMin="0.0"))
+	float HeavyHitDamageThreshold = 40.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Healing", meta=(ClampMin="0.2", Units="s"))
 	float FlaskUseTime = 1.25f;
@@ -292,6 +295,18 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation")
 	TObjectPtr<UAnimMontage> DodgeMontage;
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|Dodge")
+	TObjectPtr<UAnimMontage> DodgeForwardMontage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|Dodge")
+	TObjectPtr<UAnimMontage> DodgeBackMontage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|Dodge")
+	TObjectPtr<UAnimMontage> DodgeLeftMontage;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|Dodge")
+	TObjectPtr<UAnimMontage> DodgeRightMontage;
+
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation")
 	TObjectPtr<UAnimMontage> ParryMontage;
 
@@ -303,6 +318,31 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation")
 	TObjectPtr<UAnimMontage> HealMontage;
+
+	/** Compatible temporary drink motion. A dedicated Hendel heal animation should replace it. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|Healing")
+	TObjectPtr<UAnimSequence> HealAnim;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|Reaction")
+	TObjectPtr<UAnimSequence> ParrySuccessAnim;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|Reaction")
+	TObjectPtr<UAnimSequence> HitFrontAnim;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|Reaction")
+	TObjectPtr<UAnimSequence> HitBackAnim;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|Reaction")
+	TObjectPtr<UAnimSequence> HitLeftAnim;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|Reaction")
+	TObjectPtr<UAnimSequence> HitRightAnim;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|Reaction")
+	TObjectPtr<UAnimSequence> HeavyKnockbackAnim;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|Reaction")
+	TObjectPtr<UAnimSequence> DeathAnim;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category="Exception|Animation|RootBlade")
 	TObjectPtr<UAnimSequence> RootLightAnim;
@@ -531,6 +571,14 @@ protected:
 	float AttackHitWindowRemaining = 0.0f;
 	bool bAttackHitWindowActive = false;
 	bool bHitStopTriggeredThisAttack = false;
+	bool bAttackWindowUsesNotify = false;
+	bool bComboWindowUsesNotify = false;
+	bool bComboInputWindowActive = false;
+	bool bRootMotionLocked = false;
+	bool bInvincibilityUsesNotify = false;
+	bool bParryWindowUsesNotify = false;
+	bool bHealUsesNotify = false;
+	bool bExecutionDamageUsesNotify = false;
 	TSet<TWeakObjectPtr<AActor>> DamagedActorsThisAttack;
 	bool bHitStopActive = false;
 	float SavedPlayerCustomTimeDilation = 1.0f;
@@ -783,6 +831,16 @@ public:
 	UFUNCTION(BlueprintPure, Category="Exception|Combat")
 	bool IsParryActive() const { return bIsParryActive; }
 
+	/** Entry points used by authored AnimNotify/AnimNotifyState assets. */
+	UFUNCTION(BlueprintCallable, Category="Exception|Animation|Notify")
+	void BeginAnimationWindow(EBRPlayerAnimWindow Window);
+
+	UFUNCTION(BlueprintCallable, Category="Exception|Animation|Notify")
+	void EndAnimationWindow(EBRPlayerAnimWindow Window);
+
+	UFUNCTION(BlueprintCallable, Category="Exception|Animation|Notify")
+	void HandleAnimationEvent(EBRPlayerAnimEvent Event);
+
 	UFUNCTION(BlueprintCallable, Category="Exception|Respawn")
 	void RespawnAtCheckpoint();
 
@@ -824,13 +882,20 @@ public:
 	UFUNCTION(BlueprintImplementableEvent, Category="Exception|Events")
 	void BP_ExecutionFinished(AActor* Target, float Damage);
 
+	UFUNCTION(BlueprintImplementableEvent, Category="Exception|Events")
+	void BP_PlayerAnimationEvent(FName EventName);
+
+	/** Surface-aware footstep hook. SurfaceName is the physical material or surface enum name. */
+	UFUNCTION(BlueprintImplementableEvent, Category="Exception|Events")
+	void BP_PlayerFootstep(FName SurfaceName, FVector Location);
+
 protected:
 	bool CanStartCombatAction() const;
 	void SetCombatState(EBRPlayerCombatState NewState);
 	void FinishCombatAction();
 	void EndInvincibility();
 	void EndParryWindow();
-	void PlayOptionalMontage(UAnimMontage* Montage);
+	bool PlayOptionalMontage(UAnimMontage* Montage, float PlayRate = 1.0f);
 	void BroadcastHP();
 	void BroadcastStamina();
 	void SaveBaseStats();
@@ -854,7 +919,13 @@ protected:
 	void ResetExecCam();
 	void SetRootWeapon(bool bOn);
 	void PlayRootAnim(bool bHeavy);
-	void PlayAttackSequence(UAnimSequence* Anim, UAnimMontage* FallbackMontage, float Rate);
+	bool PlayAttackSequence(UAnimSequence* Anim, UAnimMontage* FallbackMontage, float Rate);
+	UAnimMontage* SelectDodgeMontage(const FVector& WorldDirection) const;
+	void PlayHitReaction(AActor* DamageCauser, bool bHeavyHit);
+	void PlayDeathReaction(AActor* DamageCauser);
+	void PlayParrySuccessReaction();
+	bool AnimationUsesWindow(const UAnimSequenceBase* Animation, EBRPlayerAnimWindow Window) const;
+	bool AnimationUsesEvent(const UAnimSequenceBase* Animation, EBRPlayerAnimEvent Event) const;
 	bool CanBufferLightComboInput() const;
 	bool StartLightComboStep();
 	void FinishLightComboStep();

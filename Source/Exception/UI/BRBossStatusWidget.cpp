@@ -7,11 +7,22 @@
 
 void UBRBossStatusWidget::ClearBosses()
 {
+	VisibleBossCount = 0;
+	BossHPPercents.Reset();
+	BossIdentityColors.Reset();
 	BP_ClearBosses();
 }
 
 void UBRBossStatusWidget::SetBossCount(int32 BossCount)
 {
+	VisibleBossCount = FMath::Clamp(BossCount, 0, 8);
+	BossHPPercents.Init(-1.0f, VisibleBossCount);
+	BossIdentityColors.SetNum(VisibleBossCount);
+	for (int32 BossIndex = 0; BossIndex < VisibleBossCount; ++BossIndex)
+	{
+		BossIdentityColors[BossIndex] = GetBossIdentityColor(BossIndex);
+	}
+
 	for (int32 BossIndex = 0; BossIndex < 8; ++BossIndex)
 	{
 		const bool bVisible = BossIndex < BossCount;
@@ -34,10 +45,19 @@ void UBRBossStatusWidget::SetBossCount(int32 BossCount)
 void UBRBossStatusWidget::SetBossHP(int32 BossIndex, FText BossName, float CurrentHP, float MaxHP, float NormalizedHP)
 {
 	const float ClampedHP = FMath::Clamp(NormalizedHP, 0.0f, 1.0f);
+	if (BossHPPercents.IsValidIndex(BossIndex))
+	{
+		BossHPPercents[BossIndex] = ClampedHP;
+	}
+	const FLinearColor IdentityColor = GetBossIdentityColor(BossIndex, &BossName);
+	if (BossIdentityColors.IsValidIndex(BossIndex))
+	{
+		BossIdentityColors[BossIndex] = IdentityColor;
+	}
 	SetNamedText(TEXT("BossNameText"), BossIndex, BossName);
 	if (UTextBlock* BossNameText = Cast<UTextBlock>(FindIndexedWidget(TEXT("BossNameText"), BossIndex)))
 	{
-		BossNameText->SetColorAndOpacity(FSlateColor(FLinearColor(0.92f, 0.92f, 0.92f, 1.0f)));
+		BossNameText->SetColorAndOpacity(FSlateColor(IdentityColor));
 		BossNameText->SetShadowColorAndOpacity(FLinearColor(0.0f, 0.0f, 0.0f, 0.85f));
 		BossNameText->SetShadowOffset(FVector2D(2.0f, 2.0f));
 	}
@@ -46,11 +66,15 @@ void UBRBossStatusWidget::SetBossHP(int32 BossIndex, FText BossName, float Curre
 	{
 		FProgressBarStyle Style = HPBar->GetWidgetStyle();
 		Style.BackgroundImage.TintColor = FSlateColor(FLinearColor(0.025f, 0.025f, 0.025f, 0.92f));
-		Style.FillImage.TintColor = FSlateColor(FLinearColor(0.86f, 0.0f, 0.08f, 1.0f));
+		const FLinearColor BarColor = VisibleBossCount == 2
+			? IdentityColor
+			: FLinearColor(0.86f, 0.0f, 0.08f, 1.0f);
+		Style.FillImage.TintColor = FSlateColor(BarColor);
 		HPBar->SetWidgetStyle(Style);
-		HPBar->SetFillColorAndOpacity(FLinearColor(0.86f, 0.0f, 0.08f, 1.0f));
+		HPBar->SetFillColorAndOpacity(BarColor);
 	}
 	BP_SetBossHP(BossIndex, BossName, CurrentHP, MaxHP, ClampedHP);
+	RefreshTeamBalanceStyle();
 }
 
 void UBRBossStatusWidget::SetBossGroggy(int32 BossIndex, float CurrentGroggy, float MaxGroggy, float NormalizedGroggy)
@@ -85,6 +109,65 @@ void UBRBossStatusWidget::SetBossExecutionState(int32 BossIndex, bool bCanBeExec
 		FinishPrompt->SetShadowOffset(FVector2D(1.5f, 1.5f));
 	}
 	BP_SetBossExecutionState(BossIndex, bCanBeExecuted);
+}
+
+FLinearColor UBRBossStatusWidget::GetBossIdentityColor(int32 BossIndex, const FText* BossName) const
+{
+	if (VisibleBossCount == 2)
+	{
+		if (BossName)
+		{
+			const FString Name = BossName->ToString();
+			if (Name.Contains(TEXT("Vethara"), ESearchCase::IgnoreCase))
+			{
+				return FLinearColor(0.16f, 0.74f, 1.0f, 1.0f);
+			}
+			if (Name.Contains(TEXT("Aurathos"), ESearchCase::IgnoreCase))
+			{
+				return FLinearColor(1.0f, 0.68f, 0.16f, 1.0f);
+			}
+		}
+		return BossIndex == 0
+			? FLinearColor(0.16f, 0.74f, 1.0f, 1.0f)
+			: FLinearColor(1.0f, 0.68f, 0.16f, 1.0f);
+	}
+	return FLinearColor(0.92f, 0.92f, 0.92f, 1.0f);
+}
+
+void UBRBossStatusWidget::RefreshTeamBalanceStyle()
+{
+	if (VisibleBossCount < 2
+		|| BossHPPercents.Num() < VisibleBossCount
+		|| BossIdentityColors.Num() < VisibleBossCount
+		|| BossHPPercents.ContainsByPredicate([](float HP) { return HP < 0.0f; }))
+	{
+		return;
+	}
+
+	int32 HighestIndex = 0;
+	float HighestHP = BossHPPercents[0];
+	float LowestHP = BossHPPercents[0];
+	for (int32 BossIndex = 1; BossIndex < VisibleBossCount; ++BossIndex)
+	{
+		if (BossHPPercents[BossIndex] > HighestHP)
+		{
+			HighestHP = BossHPPercents[BossIndex];
+			HighestIndex = BossIndex;
+		}
+		LowestHP = FMath::Min(LowestHP, BossHPPercents[BossIndex]);
+	}
+
+	const bool bTeamGapWarning = HighestHP - LowestHP >= 0.30f;
+	for (int32 BossIndex = 0; BossIndex < VisibleBossCount; ++BossIndex)
+	{
+		if (UTextBlock* BossNameText = Cast<UTextBlock>(FindIndexedWidget(TEXT("BossNameText"), BossIndex)))
+		{
+			const FLinearColor NameColor = bTeamGapWarning && BossIndex == HighestIndex
+				? FLinearColor(1.0f, 0.12f, 0.04f, 1.0f)
+				: BossIdentityColors[BossIndex];
+			BossNameText->SetColorAndOpacity(FSlateColor(NameColor));
+		}
+	}
 }
 
 void UBRBossStatusWidget::SetNamedText(FName BaseName, int32 BossIndex, const FText& Text)
